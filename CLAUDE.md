@@ -17,12 +17,12 @@ cargo test -- --ignored                    # integration round-trip tests; need 
 cargo clippy / cargo fmt
 ```
 
-`RUST_LOG=debug` prints the resolved kernel offsets at startup.
+`RUST_LOG=net_watch=debug` prints the resolved kernel offsets at startup. Plain `RUST_LOG=debug` also floods the log with output from dependencies.
 
 ## Build
 
 - `rust-toolchain.toml` pins **nightly** with `rust-src`. The eBPF crate uses `core_intrinsics` (`atomic_xadd`, which lowers to `BPF_ATOMIC ADD`).
-- `bpf-linker` must be on `PATH`. `net-watch-ebpf/build.rs` panics without it.
+- `bpf-linker` must be on `PATH`. `net-watch-ebpf/build.rs` panics without it. `cargo install bpf-linker` fails on this machine because there is no system `llvm-config`. Use the prebuilt `x86_64-unknown-linux-musl` release binary from github.com/aya-rs/bpf-linker instead.
 - The workspace `default-members` leave out `net-watch-ebpf`. Do not build that crate directly for the host. `net-watch/build.rs` compiles it for the BPF target through `aya-build`, and the object is embedded in the collector. `net-watch-ebpf` is listed as a build-dependency only so that cargo rebuilds when the eBPF sources change.
 
 ## Architecture
@@ -48,4 +48,7 @@ There are three crates. Most changes cross all of them:
 - `udp_sendmsg` skips AF_INET6 sockets (`IoKind::UdpV4Only`) because `udpv6_sendmsg` forwards v4-mapped sends to it. Without the skip, those bytes would be counted twice.
 - IPv4 addresses are stored IPv4-mapped in the kernel key and in ClickHouse, and shown as plain IPv4 in Redis/JSON (`model::display_ip`).
 - `clickhouse/schema.sql` is used both by the collector at startup and by the container on first boot (`docker-entrypoint-initdb.d`), so it must stay idempotent (`IF NOT EXISTS`).
+- `sink_clickhouse::apply_schema` drops whole-line `--` comments, then splits the file on `;`. A semicolon inside a string literal or `COMMENT '...'` therefore breaks startup with a syntax error. The container's init path does not have this problem, so only the collector (or `cargo test -- --ignored`) catches it.
+- fexit programs read the traced function's return value as `ctx.arg(N)`, where N is the function's argument count (`tcp_sendmsg`/`udp*_sendmsg` → 3, `udp*_recvmsg` → 5). They do not use `ctx.ret()`. When you add or change a hook, check the kernel prototype, e.g. `bpftool btf dump file /sys/kernel/btf/vmlinux | grep -A6 "FUNC 'name'"`, then the `FUNC_PROTO` it references.
+- Payload sniffing (`sniff_head`) handles `ITER_UBUF` only. It assumes the kernel leaves `iov_iter.ubuf` pointing at the start of the payload after the send, which holds on 6.8. After a kernel upgrade, re-check that assumption: a wrong pointer produces wrong protocol labels, not an error.
 - The CPU pinning defaults (collector on the last 2 CPUs, DBs on `NETWATCH_DB_CPUS`) are set for a 64-CPU host. See `.env.example` and `deploy/net-watch.service` (`CPUAffinity`).
