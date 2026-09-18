@@ -164,15 +164,53 @@ async fn flush(
 }
 
 async fn apply_schema(client: &Client) -> clickhouse::error::Result<()> {
-    let sql: String = SCHEMA
-        .lines()
-        .filter(|l| !l.trim_start().starts_with("--"))
-        .collect::<Vec<_>>()
-        .join("\n");
-    for stmt in sql.split(';').map(str::trim).filter(|s| !s.is_empty()) {
-        client.query(stmt).execute().await?;
+    for stmt in split_statements(SCHEMA) {
+        client.query(&stmt).execute().await?;
     }
     Ok(())
+}
+
+/// Splits a SQL script on `;` and drops `--` comments, ignoring both inside
+/// quoted strings and identifiers ('...', "...", `...`). Backslash escapes and
+/// doubled quotes are honoured, so `COMMENT 'a; b'` stays one statement.
+fn split_statements(sql: &str) -> Vec<String> {
+    let mut stmts = Vec::new();
+    let mut cur = String::new();
+    let mut quote: Option<char> = None;
+    let mut chars = sql.chars().peekable();
+    while let Some(c) = chars.next() {
+        match quote {
+            Some(q) => {
+                cur.push(c);
+                if c == '\\' {
+                    cur.extend(chars.next());
+                } else if c == q {
+                    if chars.peek() == Some(&q) {
+                        cur.extend(chars.next());
+                    } else {
+                        quote = None;
+                    }
+                }
+            }
+            None => match c {
+                '\'' | '"' | '`' => {
+                    quote = Some(c);
+                    cur.push(c);
+                }
+                '-' if chars.peek() == Some(&'-') => {
+                    while chars.next_if(|&n| n != '\n').is_some() {}
+                }
+                ';' => stmts.push(std::mem::take(&mut cur)),
+                _ => cur.push(c),
+            },
+        }
+    }
+    stmts.push(cur);
+    stmts
+        .into_iter()
+        .map(|s| s.trim().to_owned())
+        .filter(|s| !s.is_empty())
+        .collect()
 }
 
 fn trim<T>(buf: &mut Vec<T>, max: usize) {
@@ -186,6 +224,34 @@ fn trim<T>(buf: &mut Vec<T>, max: usize) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn split_ignores_semicolons_in_strings() {
+        let sql = "-- header; comment\n\
+                   CREATE TABLE t (a UInt8 COMMENT 'x; y', b String DEFAULT 'it''s; \\'q\\';') ENGINE = Memory; -- tail; note\n\
+                   SELECT \"c;d\", `e;f` -- trailing\n;\n;";
+        assert_eq!(
+            split_statements(sql),
+            [
+                "CREATE TABLE t (a UInt8 COMMENT 'x; y', b String DEFAULT 'it''s; \\'q\\';') ENGINE = Memory",
+                "SELECT \"c;d\", `e;f`",
+            ]
+        );
+    }
+
+    #[test]
+    fn split_keeps_dashes_in_strings() {
+        assert_eq!(split_statements("SELECT '--not a comment';"), ["SELECT '--not a comment'"]);
+    }
+
+    #[test]
+    fn schema_splits_into_create_statements() {
+        let stmts = split_statements(SCHEMA);
+        assert!(!stmts.is_empty());
+        for s in &stmts {
+            assert!(s.starts_with("CREATE "), "unexpected statement: {s}");
+        }
+    }
 
     /// Needs the compose stack: `docker compose up -d && cargo test -- --ignored`.
     #[tokio::test]
