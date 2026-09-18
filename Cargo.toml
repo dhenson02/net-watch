@@ -1,0 +1,23 @@
+[workspace]
+resolver = "2"
+members = ["net-watch", "net-watch-common", "net-watch-ebpf"]
+default-members = ["net-watch", "net-watch-common"]
+
+[workspace.package]
+edition = "2021"
+license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+aya = { version = "0.14", default-features = false }
+aya-build = { version = "0.2", default-features = false }
+aya-ebpf = { version = "0.2", default-features = false }
+net-watch-common = { path = "net-watch-common", default-features = false }
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
+
+[profile.release.package.net-watch-ebpf]
+debug = 2
+codegen-units = 1
