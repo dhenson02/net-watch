@@ -19,6 +19,13 @@ function port(name: string, fallback: number): number {
   return n;
 }
 
+function int(name: string, fallback: number, min: number, max: number): number {
+  const raw = env(name, String(fallback));
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < min || n > max) throw new Error(`${name}: expected an integer in ${min}..${max}, got "${raw}"`);
+  return n;
+}
+
 export const config = {
   host: env('WEB_HOST', '127.0.0.1'),
   port: port('WEB_PORT', 8787),
@@ -30,6 +37,8 @@ export const config = {
     password: env('CLICKHOUSE_PASSWORD', 'netwatch'),
     database: env('CLICKHOUSE_DATABASE', 'netwatch'),
   },
+  /** Ticks the live hub loads at startup and keeps in memory (1 s each). */
+  liveBackfill: int('LIVE_BACKFILL', 900, 1, 86_400),
   /** Built SPA; served only if it exists (in dev, Vite serves the client). */
   clientDir: `${appRoot}dist/client`,
 } as const;

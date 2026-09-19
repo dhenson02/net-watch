@@ -1,0 +1,67 @@
+import type { ServerResponse } from 'node:http';
+import type { FastifyInstance } from 'fastify';
+import type { CompactTick, LiveHello, LiveSnapshot } from '../../shared/api.ts';
+import { HttpError } from '../http-error.ts';
+import type { LiveHub } from '../live/hub.ts';
+
+const KEEPALIVE_MS = 15_000;
+/** A client this far behind is dropped; EventSource reconnects and re-syncs. */
+const MAX_BUFFERED_BYTES = 1 << 20;
+
+export function liveRoutes(app: FastifyInstance, deps: { hub: LiveHub }) {
+  const { hub } = deps;
+
+  app.get<{ Querystring: { seconds?: string } }>('/api/live/series', async (req): Promise<CompactTick[]> => {
+    const raw = req.query.seconds ?? '900';
+    const seconds = /^\d+$/.test(raw) ? Number(raw) : NaN;
+    if (!(seconds >= 1 && seconds <= 86_400)) throw new HttpError(400, 'seconds: expected an integer in 1..86400');
+    return hub.series(seconds);
+  });
+
+  // Polled by the live table, so it is not request-logged.
+  app.get('/api/live/snapshot', { logLevel: 'warn' }, async (): Promise<LiveSnapshot> => {
+    const snap = hub.latest();
+    if (!snap) throw new HttpError(503, 'no live data yet');
+    return snap;
+  });
+
+  // One SSE stream per browser tab, all fed by the hub's single stream reader.
+  const open = new Set<ServerResponse>();
+  app.addHook('preClose', async () => {
+    for (const res of open) res.end();
+  });
+
+  app.get('/api/live/events', { logLevel: 'warn' }, (req, reply) => {
+    reply.hijack(); // we write the raw response; Fastify must not serialize one
+    const res = reply.raw;
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache, no-transform',
+      Connection: 'keep-alive',
+      'X-Accel-Buffering': 'no', // in case a proxy ever sits in front
+    });
+    res.flushHeaders();
+    open.add(res);
+
+    const send = (event: string, data: unknown) => {
+      if (res.writableLength > MAX_BUFFERED_BYTES) {
+        req.log.warn('SSE client too slow; closing its stream');
+        res.destroy();
+        return;
+      }
+      res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+
+    send('hello', { latestTs: hub.latestTs() } satisfies LiveHello);
+    const unsubscribe = hub.subscribe((tick) => send('tick', tick));
+    const keepalive = setInterval(() => res.write(':keepalive\n\n'), KEEPALIVE_MS);
+
+    // The response's 'close' is the disconnect signal. The request's 'close'
+    // fires once its empty GET body has been consumed.
+    res.once('close', () => {
+      clearInterval(keepalive);
+      unsubscribe();
+      open.delete(res);
+    });
+  });
+}

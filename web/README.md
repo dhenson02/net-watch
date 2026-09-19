@@ -33,6 +33,8 @@ http://localhost:8787.
 ```sh
 npm run dev         # API on :8787 (node --watch) + Vite on :5173 with HMR
 npm run typecheck   # client and server tsconfigs
+npm test            # server unit tests (node --test)
+npm run test:int    # every endpoint against the compose stack (needs `docker compose up -d --wait`)
 ```
 
 Open http://127.0.0.1:5173. Vite proxies `/api/*` to the API server.
@@ -49,6 +51,7 @@ Environment variables, or `web/.env` (real environment variables win):
 | `CLICKHOUSE_USER` / `CLICKHOUSE_PASSWORD` | `netwatch` / `netwatch` |
 | `CLICKHOUSE_DATABASE` | `netwatch` |
 | `LOG_LEVEL` | `info` |
+| `LIVE_BACKFILL` | `900`: ticks (1 s each) the live hub loads at startup and keeps in memory. The stream holds up to 3600; loading all of them is slower to parse. |
 
 The API starts and stays up even when a database is down. Redis reconnects in
 the background, and `/api/health` reports the state of each backend.
@@ -58,16 +61,45 @@ the background, and `/api/health` reports the state of each backend.
 | route | |
 |---|---|
 | `GET /api/health` | status, latency and version of Redis and ClickHouse (always 200 while the API is up) |
+| `GET /api/live/series?seconds=900` | `CompactTick[]` from the hub's ring buffer, oldest first (`seconds` 1..86400) |
+| `GET /api/live/events` | SSE: `hello` `{latestTs}` on connect, then one `tick` (a `CompactTick`) per collector tick, `:keepalive` every 15 s |
+| `GET /api/live/snapshot` | the latest full snapshot (`LiveSnapshot`) from memory; 503 until the first tick |
+| `GET /api/history/summary?from&to` | payload bytes and process count over a range |
+| `GET /api/process/:pid/:start` | one process instance from `processes`; 404 if unknown |
+
+Errors are `{ "error": "…" }` with a 4xx/5xx status; ClickHouse failures are
+502. History endpoints take `from`/`to` in ms (default: the last hour) and an
+optional `step` in s. The server picks the table and step: raw `flows` up to
+2 h, `flows_1m` beyond, at most ~1500 buckets. A request cancelled by the
+browser cancels its ClickHouse query.
+
+### Live hub
+
+One server-side reader follows `netwatch:stream` on its own Redis connection
+(`XREAD BLOCK`), keeps the last `LIVE_BACKFILL` ticks in a compact form plus the
+latest full snapshot, and fans ticks out to browsers over SSE. Browsers never
+read the stream themselves. After an outage it resumes from the last id it
+read; ticks lost meanwhile (stream trimmed, collector stopped) are flagged with
+`gap: true` on the next tick so charts draw a break.
 
 ## Layout
 
 ```
 src/server/    Fastify API + static hosting of dist/client (SPA fallback)
   db/          Redis and ClickHouse clients and their health probes
-  routes/      one module per API area
+  live/        LiveHub (stream reader, ring buffer, SSE fan-out), snapshot compaction
+  ch/          chQuery, parseRange, SQL fragments (DISPLAY_IP), timezone check
+  routes/      one module per API area (health, live, history, process)
 src/client/    React SPA (Vite root)
+  router.ts    usePath / navigate / useSearchParam / Link; all page state is in the URL
+  pages/       Live, History, Process
+  charts/      ECharts registration, <EChart>, palette, formatters, themes
+  components/  Panel, RangePicker, SegmentedControl, Toggle, StatusPill
+  hooks/       useQuery (fetch + abort + stale-while-revalidate), useLive, useTimeRange
 src/shared/    API response types, imported by both sides
 ```
+
+Routes: `/` → `/live`, `/history?from&to`, `/process/:pid/:start`.
 
 Conventions:
 
@@ -78,4 +110,12 @@ Conventions:
 - ClickHouse queries run with `readonly=2`, so the dashboard cannot write.
   Pass user input as query parameters (`{name:Type}` + `query_params`), never
   by string concatenation.
-- Charts will use Apache ECharts.
+- Charts use Apache ECharts through `<EChart>` (`src/client/charts/`). Import
+  `echarts` from `charts/echarts.ts`, which registers only the modules in use;
+  add a chart type there when a chart needs one. Colors come from
+  `charts/palette.ts`: tx is warm and drawn above zero, rx is cool and drawn
+  below, and series keep their color slot while rankings change
+  (`SlotAssigner`, one per page).
+- Rates are kbps on the wire, shown with SI prefixes (`fmtRate`); byte totals
+  use IEC units (`fmtBytes`). Traffic charts carry the note "application
+  payload (excludes headers and retransmits)" (the `Panel` default footnote).

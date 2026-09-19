@@ -4,18 +4,39 @@ import fastifyStatic from '@fastify/static';
 import { config } from './config.ts';
 import { createClickHouse } from './db/clickhouse.ts';
 import { createRedis } from './db/redis.ts';
+import { HttpError } from './http-error.ts';
+import { LiveHub } from './live/hub.ts';
 import { healthRoutes } from './routes/health.ts';
+import { historyRoutes } from './routes/history.ts';
+import { liveRoutes } from './routes/live.ts';
+import { processRoutes } from './routes/process.ts';
 
 const app = Fastify({ logger: { level: config.logLevel } });
 
 const redis = createRedis(config.redisUrl, app.log);
 const clickhouse = createClickHouse(config.clickhouse);
+const hub = new LiveHub(redis, app.log, config.liveBackfill);
+hub.start();
 app.addHook('onClose', async () => {
+  await hub.stop();
   redis.destroy();
   await clickhouse.close();
 });
 
-healthRoutes(app, { redis, clickhouse });
+// Every error response is `{ error }`. Messages of unexpected (non-HttpError)
+// 5xx errors stay in the log.
+app.setErrorHandler((err: Error & { statusCode?: number }, req, reply) => {
+  const status = err.statusCode && err.statusCode >= 400 ? err.statusCode : 500;
+  const expose = status < 500 || err instanceof HttpError;
+  if (!expose) req.log.error(err);
+  return reply.code(status).send({ error: expose ? err.message : 'internal error' });
+});
+
+const deps = { redis, clickhouse, hub };
+healthRoutes(app, deps);
+liveRoutes(app, deps);
+historyRoutes(app, deps);
+processRoutes(app, deps);
 
 const serveClient = existsSync(`${config.clientDir}/index.html`);
 if (serveClient) {
