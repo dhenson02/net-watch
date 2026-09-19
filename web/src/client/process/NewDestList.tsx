@@ -8,6 +8,7 @@ import { NewDestToggles } from '../history/NewDestTrack.tsx';
 import { processPath } from '../history/clusterMarkers.ts';
 import { asnLabel } from '../destinations/geoView.ts';
 import { useQuery } from '../hooks/useQuery.ts';
+import { useGeoEpoch } from '../geoStatus.ts';
 import { Link, setSearchParams, useSearch } from '../router.ts';
 import { BEACON_FOCUS_PARAM, BEACON_SCOPE_PARAM, BEACONS_PANEL_ID, historyHref } from './beaconStrip.ts';
 
@@ -29,7 +30,7 @@ function focusStrip(d: NewDest) {
  */
 export function NewDestList({ p, week }: { p: ProcessInfo; week: TimeRange }) {
   const opts = parseNewDestOptions(useSearch());
-  const q = useQuery<NewDestsResponse>(urls.historyNewDests(week, { names: [p.name], ...opts }));
+  const q = useQuery<NewDestsResponse>(urls.historyNewDests(week, { names: [p.name], ...opts }), useGeoEpoch());
   const [all, setAll] = useState(false);
   const d = q.data;
   const id = `${p.pid}:${p.start_ns}`;

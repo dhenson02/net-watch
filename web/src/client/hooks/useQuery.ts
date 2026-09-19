@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { getJson } from '../api.ts';
 
 const MAX_CACHED = 50;
@@ -25,8 +25,12 @@ export interface QueryState<T> {
  * URL loads, the cached answer for it, or else the previous URL's data, stays
  * visible. Changing the URL or unmounting aborts the request in flight, which
  * also cancels its ClickHouse query on the server.
+ *
+ * `refreshOn` refetches (keeping the old data visible) when it changes to a
+ * different value; going from undefined to a first value does not, since that
+ * is just the value becoming known.
  */
-export function useQuery<T>(url: string | null): QueryState<T> {
+export function useQuery<T>(url: string | null, refreshOn?: unknown): QueryState<T> {
   const [state, setState] = useState<{ url: string | null; data: T | undefined; error: string | null; loading: boolean }>(() => ({
     url,
     data: url ? (cache.get(url) as T | undefined) : undefined,
@@ -55,6 +59,14 @@ export function useQuery<T>(url: string | null): QueryState<T> {
   }, [url, nonce]);
 
   const reload = useCallback(() => setNonce((n) => n + 1), []);
+
+  const seen = useRef(refreshOn);
+  useEffect(() => {
+    const prev = seen.current;
+    seen.current = refreshOn;
+    if (prev !== undefined && prev !== refreshOn) reload();
+  }, [refreshOn, reload]);
+
   const fresh = state.url === url && !state.loading;
   return { data: state.data, error: state.error, loading: state.loading, stale: !fresh && state.data !== undefined, reload };
 }

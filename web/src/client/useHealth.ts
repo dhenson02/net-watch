@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { HealthResponse } from '../shared/api.ts';
 import { getJson } from './api.ts';
+import { publishGeoStatus } from './geoStatus.ts';
 
 const POLL_MS = 5000;
 
@@ -20,6 +21,7 @@ export function useHealth(): HealthState {
     const poll = async () => {
       try {
         const health = await getJson<HealthResponse>('/api/health', AbortSignal.any([ctrl.signal, AbortSignal.timeout(4000)]));
+        publishGeoStatus(health.geo);
         setState({ kind: 'ok', health });
       } catch (err) {
         if (ctrl.signal.aborted) return;

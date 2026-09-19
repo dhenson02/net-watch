@@ -63,7 +63,14 @@ export interface SeriesNode {
   info: NodeInfo;
   itemStyle?: { color: string };
   children?: SeriesNode[];
+  /** Set on nodes with nothing below them: no click, no hover effect, plain cursor. */
+  cursor?: 'default';
+  emphasis?: { disabled: true };
+  nodeClick?: false;
 }
+
+/** Marks a node that cannot be drilled into: inert on hover and click (the treemap's click is gated in the panel). */
+export const INERT = { cursor: 'default', emphasis: { disabled: true }, nodeClick: false } as const;
 
 /**
  * The series data. Users carry their color; the treemap varies the shade of
@@ -90,10 +97,12 @@ export function seriesData(users: readonly TreemapUser[], scheme: Scheme, shades
           value: p.value,
           info: { kind: 'proc', uid: u.uid, ...(p.folded !== undefined ? { folded: p.folded } : {}) },
           ...(base ? { itemStyle: { color: base } } : {}),
+          ...(p.children.length ? {} : INERT),
           children: p.children.map((a) => ({
             name: a.name,
             value: a.value,
             info: { kind: 'app', uid: u.uid },
+            ...INERT,
             ...(shades && base ? { itemStyle: { color: lighten(base, 0.3) } } : {}),
           })),
         };

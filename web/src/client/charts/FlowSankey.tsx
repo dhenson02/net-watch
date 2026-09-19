@@ -5,6 +5,7 @@ import { Panel } from '../components/Panel.tsx';
 import { SegmentedControl } from '../components/SegmentedControl.tsx';
 import { usePoll } from '../hooks/usePoll.ts';
 import { useQuery } from '../hooks/useQuery.ts';
+import { useGeoEpoch } from '../geoStatus.ts';
 import { navigate, setSearchParams, useSearchParam } from '../router.ts';
 import { buildSankey, type FlowDir, type SankeyGraph, type SankeyNode } from './buildSankey.ts';
 import { EChart } from './EChart.tsx';
@@ -252,7 +253,7 @@ export function LiveFlowSankey({ slots }: { slots: SlotAssigner }) {
 export function HistoryFlowSankey({ range, filters, slots }: { range: TimeRange; filters: Partial<Record<string, string>>; slots: SlotAssigner }) {
   const [dir, setDir] = useDir();
   const [byAsn, setByAsn] = useByAsn();
-  const q = useQuery<HistoryFlowsResponse>(urls.historyFlows(range, filters));
+  const q = useQuery<HistoryFlowsResponse>(urls.historyFlows(range, filters), useGeoEpoch());
   const dest = filters.dest;
   const d = q.data;
   const onDest = (key: string) => setSearchParams({ [DEST_PARAM]: key });

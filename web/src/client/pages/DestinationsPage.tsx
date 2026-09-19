@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import type { AsnResponse, CountriesResponse, DestinationsResponse, DestScope, GeoDir, HealthResponse } from '../../shared/api.ts';
+import type { AsnResponse, CountriesResponse, DestinationsResponse, DestScope, GeoDir } from '../../shared/api.ts';
 import { urls } from '../api.ts';
 import { fmtBytes, fmtDuration, fmtTime } from '../charts/format.ts';
 import { Panel } from '../components/Panel.tsx';
@@ -9,6 +9,7 @@ import { AsnBars } from '../destinations/AsnBars.tsx';
 import { DestTable } from '../destinations/DestTable.tsx';
 import { asnLabel, countryName, coverageText, GEO_STALE_DAYS, geoAgeDays, parseDestPageParams, pctText } from '../destinations/geoView.ts';
 import { WorldMap } from '../destinations/WorldMap.tsx';
+import { useGeoEpoch, useGeoStatus } from '../geoStatus.ts';
 import { useQuery } from '../hooks/useQuery.ts';
 import { useTimeRange } from '../hooks/useTimeRange.ts';
 import { setSearchParams, useSearch } from '../router.ts';
@@ -36,13 +37,13 @@ const DIR_NOUN: Record<GeoDir, string> = { total: 'bytes', tx: 'sent bytes', rx:
 export function DestinationsPage() {
   const range = useTimeRange();
   const { dir, asn, cc, scope } = parseDestPageParams(useSearch());
-  const health = useQuery<HealthResponse>('/api/health');
-  const asns = useQuery<AsnResponse>(urls.historyAsn(range, { dir }));
-  const countries = useQuery<CountriesResponse>(urls.historyCountries(range, { dir }));
-  const dests = useQuery<DestinationsResponse>(urls.historyDestinations(range, { dir, asn, cc, scope, limit: 1000 }));
+  const geo = useGeoStatus();
+  const epoch = useGeoEpoch();
+  const asns = useQuery<AsnResponse>(urls.historyAsn(range, { dir }), epoch);
+  const countries = useQuery<CountriesResponse>(urls.historyCountries(range, { dir }), epoch);
+  const dests = useQuery<DestinationsResponse>(urls.historyDestinations(range, { dir, asn, cc, scope, limit: 1000 }), epoch);
   const a = asns.data;
-  const geo = health.data?.geo;
-  const geoOn = a ? a.geo : !!geo?.loaded;
+  const geoOn = geo ? geo.loaded : !!a?.geo;
 
   const selectAsn = useCallback((n: number) => setSearchParams({ asn: n, cc: null, scope: null }), []);
   const selectCc = useCallback((c: string) => setSearchParams({ cc: c, asn: null, scope: null }), []);
@@ -72,7 +73,7 @@ export function DestinationsPage() {
         </p>
       )}
       <div className="panels">
-        {health.data && !geo?.loaded && (
+        {geo && !geo.loaded && (
           <section className="panel panel-wide geo-notice" role="note">
             <p>
               <b>No IP → ASN table loaded</b>, so destinations are shown without network or country.{' '}

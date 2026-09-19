@@ -1,9 +1,9 @@
-import { useMemo } from 'react';
+import { useMemo, useRef } from 'react';
 import type { TreemapDir, TreemapResponse } from '../../shared/api.ts';
 import { urls, type TimeRange } from '../api.ts';
 import { cssVar } from '../charts/cssVar.ts';
-import { EChart } from '../charts/EChart.tsx';
-import type { EChartsCoreOption } from '../charts/echarts.ts';
+import { EChart, useEChartRef } from '../charts/EChart.tsx';
+import type { EChartsCoreOption, EChartsType } from '../charts/echarts.ts';
 import { fmtBytes } from '../charts/format.ts';
 import { CATEGORICAL } from '../charts/palette.ts';
 import { useColorScheme } from '../charts/useColorScheme.ts';
@@ -46,6 +46,12 @@ type Props = {
   filters: Partial<Record<'name' | 'app' | 'proto' | 'uid' | 'dest', string>>;
 };
 
+/** The node the treemap is currently drilled into (ECharts internals: no public getter). */
+function viewRoot(chart: EChartsType | null) {
+  const series = (chart as any)?.getModel?.().getSeriesByIndex(0);
+  return series?.getViewRoot?.() as { dataIndex: number; parentNode?: unknown } | undefined;
+}
+
 type NodeParams = {
   name?: string;
   value?: number;
@@ -67,6 +73,27 @@ export function BandwidthTreemap({ range, filters }: Props) {
   const q = useQuery<TreemapResponse>(urls.historyTreemap(range, { dir, filters }));
   const scheme = useColorScheme();
   const d = q.data;
+  // Whether the pointer is over a node with nothing to drill into. The treemap
+  // has no per-node nodeClick, so the panel swallows those clicks itself.
+  const overLeaf = useRef(false);
+  // Whether it is over the drilled-into node itself (its header or border, the
+  // container around the children): a click there rolls back up one level.
+  const overRoot = useRef(false);
+  const chartRef = useEChartRef();
+  const events = useMemo(
+    () => ({
+      mouseover: (p: NodeParams & { dataIndex?: number }) => {
+        overLeaf.current = p.data?.info?.kind === 'app' || (p.data as { nodeClick?: unknown } | undefined)?.nodeClick === false;
+        const root = viewRoot(chartRef.current);
+        overRoot.current = !!root?.parentNode && root.dataIndex === p.dataIndex;
+      },
+      mouseout: () => {
+        overLeaf.current = false;
+        overRoot.current = false;
+      },
+    }),
+    [chartRef],
+  );
 
   const option = useMemo<EChartsCoreOption>(() => {
     const surface = cssVar('--surface');
@@ -173,7 +200,7 @@ export function BandwidthTreemap({ range, filters }: Props) {
       <span style={{ color: CATEGORICAL[scheme][ROOT_SLOT] }}>
         ■
       </span>{' '}
-      root{root ? ` ${shareText(root.value, d!.total)}` : ''} · click to drill in{d?.truncated ? ' · only the largest rows were read' : ''}
+      root{root ? ` ${shareText(root.value, d!.total)}` : ''} · click to drill in, click the outer frame or breadcrumb to go back{d?.truncated ? ' · only the largest rows were read' : ''}
     </>
   );
 
@@ -203,8 +230,21 @@ export function BandwidthTreemap({ range, filters }: Props) {
         </>
       }
     >
-      <div className="chart-wrap">
+      <div
+        className="chart-wrap"
+        onClickCapture={(e) => {
+          if (view !== 'treemap') return;
+          if (overRoot.current) {
+            e.stopPropagation();
+            overRoot.current = false;
+            const parent = viewRoot(chartRef.current)?.parentNode;
+            if (parent) chartRef.current!.dispatchAction({ type: 'treemapRootToNode', seriesId: 'treemap', targetNode: parent });
+          } else if (overLeaf.current) e.stopPropagation();
+        }}
+      >
         <EChart
+          onEvents={events}
+          chartRef={chartRef}
           // The two views are different series types: re-create rather than merge.
           key={view}
           option={option}

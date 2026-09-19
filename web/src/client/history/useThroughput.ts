@@ -5,6 +5,7 @@ import { THROUGHPUT_OTHER, type CompareOffset, type ThroughputBy, type Throughpu
 import { urls, type TimeRange } from '../api.ts';
 import type { SlotAssigner } from '../charts/palette.ts';
 import { useQuery, type QueryState } from '../hooks/useQuery.ts';
+import { useGeoEpoch } from '../geoStatus.ts';
 import { useSearch } from '../router.ts';
 import { parseThroughputParams, type ThroughputParams } from './throughputSeries.ts';
 
@@ -27,7 +28,7 @@ export function useThroughput(
   unknown = false,
   calls = false,
 ): QueryState<ThroughputResponse> & { slotOf: Map<string, number> } {
-  const q = useQuery<ThroughputResponse>(urls.historyThroughput(range, p, compare, unknown, calls));
+  const q = useQuery<ThroughputResponse>(urls.historyThroughput(range, p, compare, unknown, calls), useGeoEpoch());
   const owned = useRef<{ by: ThroughputBy; keys: Set<string> }>({ by: p.by, keys: new Set() });
   const last = useRef(new Map<string, number>());
   const slotOf = useMemo(() => {

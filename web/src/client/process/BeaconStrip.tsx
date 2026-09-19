@@ -11,6 +11,7 @@ import { useColorScheme } from '../charts/useColorScheme.ts';
 import { Panel } from '../components/Panel.tsx';
 import { SegmentedControl } from '../components/SegmentedControl.tsx';
 import { useQuery } from '../hooks/useQuery.ts';
+import { useGeoEpoch } from '../geoStatus.ts';
 import { Link, navigate, setSearchParams, useSearch } from '../router.ts';
 import { processCallsRange } from '../history/callsSeries.ts';
 import {
@@ -224,7 +225,7 @@ export function ProcessBeacons({ p }: { p: ProcessInfo }) {
   const range = useMemo(() => scopeRange(base, scope), [base, scope]);
   const cut = range.from !== base.from;
   const url = scope === 'name' ? urls.historyBeacons(p.name, range) : urls.processBeacons(String(p.pid), p.start_ns, range);
-  const q = useQuery<BeaconsResponse>(url);
+  const q = useQuery<BeaconsResponse>(url, useGeoEpoch());
   const d = q.data ?? null;
   const shown: TimeRange = d ? { from: d.from, to: d.to } : range;
   const periodic = d ? d.dests.filter(isPeriodic).length : 0;

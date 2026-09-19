@@ -6,6 +6,7 @@ import { ProcessBytesPerCall } from '../history/BytesPerCall.tsx';
 import { ProcessCallsPanel } from '../history/CallsPanel.tsx';
 import { ProcessGantt } from '../history/ProcessGantt.tsx';
 import { useQuery, type QueryState } from '../hooks/useQuery.ts';
+import { useGeoEpoch } from '../geoStatus.ts';
 import { ProcessBeacons } from '../process/BeaconStrip.tsx';
 import { NewDestList } from '../process/NewDestList.tsx';
 import { Link } from '../router.ts';
@@ -21,7 +22,7 @@ export const PROCESS_WINDOW_MS = 7 * 86_400_000;
  * Sections take the loaded `ProcessInfo` and render nothing until it arrives.
  */
 export function ProcessPage({ pid, start }: { pid: string; start: string }) {
-  const q = useQuery<ProcessInfo>(urls.process(pid, start));
+  const q = useQuery<ProcessInfo>(urls.process(pid, start), useGeoEpoch());
   const p = q.data;
   const [openedAt] = useState(() => Date.now());
   const week: TimeRange = { from: openedAt - PROCESS_WINDOW_MS, to: openedAt };
