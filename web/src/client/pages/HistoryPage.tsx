@@ -10,6 +10,7 @@ import { SegmentedControl } from '../components/SegmentedControl.tsx';
 import { parseEventsMode, type EventsMode } from '../history/clusterMarkers.ts';
 import { ActivityHeatmap } from '../history/ActivityHeatmap.tsx';
 import { BandwidthTreemap } from '../history/BandwidthTreemap.tsx';
+import { HistoryBytesPerCall } from '../history/BytesPerCall.tsx';
 import { HistoryCallsPanel } from '../history/CallsPanel.tsx';
 import { parseCallsParam } from '../history/callsSeries.ts';
 import { LifecycleTrack } from '../history/LifecycleTrack.tsx';
@@ -81,7 +82,7 @@ export function HistoryPage() {
               clear all
             </button>
           )}
-          <span className="muted">applies to the totals, the throughput chart, the calls panel, the activity heatmap, the bandwidth treemap, the sent/received scatter, the flow diagram and (process and uid only) the process lifetimes</span>
+          <span className="muted">applies to the totals, the throughput chart, the calls panel, the bytes per call, the activity heatmap, the bandwidth treemap, the sent/received scatter, the flow diagram and (process and uid only) the process lifetimes</span>
         </p>
       )}
       <div className="panels">
@@ -144,6 +145,8 @@ export function HistoryPage() {
         />
 
         <HistoryCallsPanel range={range} open={callsOpen} answer={callsOpen ? answer : null} />
+
+        <HistoryBytesPerCall range={range} filters={filters} />
 
         <ActivityHeatmap filters={filters} />
 

@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import {
+  type BytesPerCallResponse,
   COMPARE_OFFSET_MS,
   HEATMAP_CELLS,
   type HistoryFlowsResponse,
@@ -12,6 +13,7 @@ import {
   type ThroughputResponse,
   type TreemapResponse,
 } from '../../shared/api.ts';
+import { buildBytesPerCall, bytesPerCallQuery, parseBpcBy, parseBpcDir, parseInstance, type BytesPerCallQueryRow } from '../ch/bytesPerCall.ts';
 import { buildHeatmap, heatmapQuery, parseHeatRange, parseMetric, parseSplit, sampleCounts, type HeatmapRow } from '../ch/heatmap.ts';
 import { LIFECYCLE_LIMIT_DEFAULT, LIFECYCLE_LIMIT_MAX, lifecycleQuery, parseNames, toLifecycleProc, type LifecycleRow } from '../ch/lifecycle.ts';
 import { LIFETIMES_LIMIT_DEFAULT, LIFETIMES_LIMIT_MAX, lifetimesQuery, toLifetimeBar, type LifetimeRow } from '../ch/lifetimes.ts';
@@ -285,6 +287,25 @@ export function historyRoutes(app: FastifyInstance, deps: { clickhouse: ClickHou
       users: tree,
       truncated,
     };
+  });
+
+  /**
+   * Bytes-per-call distribution (10): calls per log2 bucket of bytes per call
+   * (`dir=tx|rx`), per `by=app|name`, the top 10 by calls plus the folded
+   * rest, and the total. Each source row adds its mean weighted by its calls:
+   * raw `flows` (per-tick means) up to 2 h, else `flows_1m` (per-minute
+   * means). `pid` + `start` narrow it to one instance, always from raw flows.
+   * The page's filters apply.
+   */
+  app.get<RangeQuery>('/api/history/bytes-per-call', async (req, reply): Promise<BytesPerCallResponse> => {
+    const parsed = parseRange(req.query);
+    const dir = parseBpcDir(req.query.dir);
+    const by = parseBpcBy(req.query.by);
+    const instance = parseInstance(req.query);
+    const r = instance ? { ...parsed, table: 'flows' as const, col: 'ts' as const } : parsed;
+    const { sql, params } = bytesPerCallQuery({ r, dir, by, filters: parseFilters(req.query), instance });
+    const rows = await chQuery<BytesPerCallQueryRow>(ch, req.log, sql, params, clientGone(reply));
+    return buildBytesPerCall(rows, { from: r.from, to: r.to, table: r.table, dir, by });
   });
 
   /**

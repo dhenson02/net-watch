@@ -60,7 +60,13 @@ export const urls = {
   // 09: `name`/`uid` narrow it (exact); the server caps it at `limit` (default 500).
   historyLifetimes: (r: TimeRange, p: { name?: string; uid?: string; limit?: number } = {}) =>
     `/api/history/lifetimes?${qs({ from: r.from, to: r.to, name: p.name, uid: p.uid, limit: p.limit })}`,
-  historyScatter: (r: TimeRange, p: { group: string; basis: string; filters: UrlFilters }) =>
+  // 10: calls per log2 bucket of bytes per call; `dir` tx (default) | rx, `by` app (default) | name.
+  historyBytesPerCall: (r: TimeRange, p: { dir: string; by: string; filters: UrlFilters }) =>
+    `/api/history/bytes-per-call?${qs({ from: r.from, to: r.to, dir: p.dir === 'tx' ? undefined : p.dir, by: p.by === 'app' ? undefined : p.by, ...p.filters })}`,
+  // 10: one instance, from raw flows.
+  processBytesPerCall: (pid: string, start: string, r: TimeRange, dir: string) =>
+    `/api/process/${encodeURIComponent(pid)}/${encodeURIComponent(start)}/bytes-per-call?${qs({ from: r.from, to: r.to, dir: dir === 'tx' ? undefined : dir })}`,
+  historyScatter:(r: TimeRange, p: { group: string; basis: string; filters: UrlFilters }) =>
     `/api/history/scatter?${qs({ from: r.from, to: r.to, group: p.group, basis: p.basis, ...p.filters })}`,
 };
 

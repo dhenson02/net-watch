@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { urls, type ProcessInfo, type TimeRange } from '../api.ts';
 import { fmtBytes, fmtDuration, fmtTime } from '../charts/format.ts';
 import { Panel } from '../components/Panel.tsx';
+import { ProcessBytesPerCall } from '../history/BytesPerCall.tsx';
 import { ProcessCallsPanel } from '../history/CallsPanel.tsx';
 import { ProcessGantt } from '../history/ProcessGantt.tsx';
 import { useQuery, type QueryState } from '../hooks/useQuery.ts';
@@ -58,6 +59,8 @@ function ProcessSections({ p, week }: { p: ProcessInfo; week: TimeRange }) {
       />
       {/* 14: this instance's bytes, calls and bytes per call over its traffic window. */}
       <ProcessCallsPanel p={p} />
+      {/* 10: this instance's calls by bytes per call, from raw flows, the median marked. */}
+      <ProcessBytesPerCall p={p} />
     </>
   );
 }

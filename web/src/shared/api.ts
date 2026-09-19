@@ -534,3 +534,51 @@ export interface TreemapResponse {
   /** More (uid, name, app) rows matched than the server reads; the smallest were left out. */
   truncated: boolean;
 }
+
+// ---------------------------------------------------------------------------
+// Bytes-per-call distribution (10)
+
+/** Which calls a bytes-per-call histogram counts: sends or receives. */
+export type BytesPerCallDir = 'tx' | 'rx';
+/** Rows of the History heatmap: apps or process names. */
+export type BytesPerCallBy = 'app' | 'name';
+
+/**
+ * log2 buckets of bytes per call: bucket `b` holds means in `[2^b, 2^(b+1))`
+ * bytes, bucket 0 also those under 1 B, and the last (20) everything from
+ * 1 MiB up.
+ */
+export const BPC_BUCKETS = 21;
+
+export interface BytesPerCallRow {
+  /** The app or process name; null for the folded rest (`folded` keys). */
+  key: string | null;
+  /** Calls per bucket (BPC_BUCKETS long), the histogram's weight. */
+  calls: number[];
+  /** Bytes per bucket, for the share of bytes next to the share of calls. */
+  bytes: number[];
+  totalCalls: number;
+  totalBytes: number;
+}
+
+/**
+ * `/api/history/bytes-per-call` and `/api/process/:pid/:start/bytes-per-call`
+ * (10): calls bucketed by bytes per call. Each source row (one flow over one
+ * tick in raw `flows`, over one minute in `flows_1m`) contributes its mean,
+ * bytes / calls, weighted by its calls: the histogram is a distribution of
+ * per-flow-tick or per-flow-minute means, not of single calls.
+ */
+export interface BytesPerCallResponse {
+  from: number;
+  to: number;
+  /** Raw `flows` (per-tick means) up to 2 h and for one process, else `flows_1m` (per-minute means). */
+  table: 'flows' | 'flows_1m';
+  dir: BytesPerCallDir;
+  by: BytesPerCallBy;
+  /** Every key summed. */
+  total: BytesPerCallRow;
+  /** The top keys by calls, most first, then the rest folded into one row (key null), if any. */
+  rows: BytesPerCallRow[];
+  /** How many keys the null row sums; 0 without one. */
+  folded: number;
+}

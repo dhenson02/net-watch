@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
-import type { ProcessCallsResponse, ProcessInfo } from '../../shared/api.ts';
+import type { BytesPerCallResponse, ProcessCallsResponse, ProcessInfo } from '../../shared/api.ts';
+import { buildBytesPerCall, bytesPerCallQuery, parseBpcBy, parseBpcDir, type BytesPerCallQueryRow } from '../ch/bytesPerCall.ts';
 import { buildProcessCalls, processCallsQuery, rawRange, type ProcessCallsRow } from '../ch/calls.ts';
 import { chQuery, clientGone } from '../ch/query.ts';
 import { parseRange } from '../ch/range.ts';
@@ -72,5 +73,21 @@ export function processRoutes(app: FastifyInstance, deps: { clickhouse: ClickHou
     const { sql, params } = processCallsQuery(r, id);
     const rows = await chQuery<ProcessCallsRow>(ch, req.log, sql, params, clientGone(reply));
     return buildProcessCalls(rows, r);
+  });
+
+  /**
+   * Bytes-per-call distribution (10) of one instance over `from`/`to` (ms,
+   * default: the last hour), `dir=tx|rx`, per `by=app|name`, from raw `flows`
+   * (per-tick means) whatever the span: the same answer as
+   * `/api/history/bytes-per-call?pid&start`. No 404 for an unknown id.
+   */
+  app.get<ProcessRangeParams>('/api/process/:pid/:start/bytes-per-call', async (req, reply): Promise<BytesPerCallResponse> => {
+    const instance = parseId(req.params);
+    const r = { ...parseRange(req.query), table: 'flows' as const, col: 'ts' as const };
+    const dir = parseBpcDir(req.query.dir);
+    const by = parseBpcBy(req.query.by);
+    const { sql, params } = bytesPerCallQuery({ r, dir, by, filters: {}, instance });
+    const rows = await chQuery<BytesPerCallQueryRow>(ch, req.log, sql, params, clientGone(reply));
+    return buildBytesPerCall(rows, { from: r.from, to: r.to, table: r.table, dir, by });
   });
 }

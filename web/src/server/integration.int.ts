@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { after, before, test } from 'node:test';
 import type {
+  BytesPerCallResponse,
   CompactTick,
   FlowAgg,
   HealthResponse,
@@ -24,7 +25,7 @@ import type {
   ThroughputResponse,
   TreemapResponse,
 } from '../shared/api.ts';
-import { THROUGHPUT_OTHER } from '../shared/api.ts';
+import { BPC_BUCKETS, THROUGHPUT_OTHER } from '../shared/api.ts';
 import { parseRange } from './ch/range.ts';
 import { DISPLAY_IP } from './ch/sql.ts';
 import { alignRange, compareQuery, FIRST_MINUTE_SQL, throughputQuery } from './ch/throughput.ts';
@@ -402,6 +403,83 @@ test('process calls: one instance from raw flows, bytes and calls per bucket', a
   assert.ok(none.body.calls.tx.every((v) => v === 0));
   assert.equal((await get('/api/process/x/1/calls')).status, 400);
   assert.equal((await get('/api/process/1/1/calls?from=5&to=1')).status, 400);
+});
+
+test('history bytes-per-call: calls per bucket match the table, top keys, filters, one instance', async () => {
+  const now = Date.now();
+  const ch = createClickHouse(config.clickhouse);
+  const sumCalls = (r: { calls: number[] }) => r.calls.reduce((a, v) => a + v, 0);
+  try {
+    for (const span of [86_400_000, 3_600_000]) {
+      for (const dir of ['tx', 'rx'] as const) {
+        const res = await get<BytesPerCallResponse>(`/api/history/bytes-per-call?from=${now - span}&to=${now}&dir=${dir}`);
+        assert.equal(res.status, 200);
+        const b = res.body;
+        assert.equal(b.table, span > 7_200_000 ? 'flows_1m' : 'flows');
+        assert.deepEqual([b.dir, b.by], [dir, 'app']);
+        assert.equal(b.total.calls.length, BPC_BUCKETS);
+        assert.ok(b.rows.filter((r) => r.key !== null).length <= 10);
+        assert.equal(b.folded > 0, b.rows.some((r) => r.key === null));
+        // Rows are most calls first; they add up to the total.
+        const keyed = b.rows.filter((r) => r.key !== null);
+        keyed.forEach((r, i) => i && assert.ok(r.totalCalls <= keyed[i - 1]!.totalCalls));
+        assert.equal(b.rows.reduce((a, r) => a + r.totalCalls, 0), b.total.totalCalls);
+        assert.equal(sumCalls(b.total), b.total.totalCalls);
+        // Every call with payload counted once: the table's calls in range.
+        const col = b.table === 'flows' ? 'ts' : 'minute';
+        const time =
+          col === 'ts'
+            ? 'ts >= fromUnixTimestamp64Milli({from:Int64}) AND ts < fromUnixTimestamp64Milli({to:Int64})'
+            : 'minute >= toDateTime(intDiv({from:Int64}, 1000)) AND minute < toDateTime(intDiv({to:Int64}, 1000))';
+        const rs = await ch.query({
+          query: `SELECT sum(${dir}_calls) AS c, sum(${dir}_bytes) AS b FROM ${b.table} WHERE ${time} AND ${dir}_calls > 0`,
+          query_params: { from: b.from, to: b.to },
+          format: 'JSONEachRow',
+        });
+        const [want] = await rs.json<{ c: string; b: string }>();
+        assert.equal(b.total.totalCalls, Number(want!.c), `${span} ${dir} calls`);
+        assert.equal(b.total.totalBytes, Number(want!.b), `${span} ${dir} bytes`);
+        // A filter keeps one key.
+        const top = keyed[0]?.key;
+        if (top) {
+          const one = (await get<BytesPerCallResponse>(`/api/history/bytes-per-call?from=${now - span}&to=${now}&dir=${dir}&app=${encodeURIComponent(top)}`)).body;
+          assert.deepEqual(
+            one.rows.map((r) => r.key),
+            [top],
+          );
+          assert.deepEqual(one.total.calls, keyed[0]!.calls);
+        }
+      }
+    }
+    // by=name, with a uid filter (the rollup joins processes).
+    const byName = await get<BytesPerCallResponse>(`/api/history/bytes-per-call?from=${now - 86_400_000}&to=${now}&by=name&uid=0`);
+    assert.equal(byName.status, 200);
+    assert.equal(byName.body.by, 'name');
+
+    // One instance: history ?pid&start and the process route agree, from raw flows.
+    const rs = await ch.query({
+      query: `SELECT pid, toString(proc_start) AS start, toUnixTimestamp64Milli(min(ts)) AS first, toUnixTimestamp64Milli(max(ts)) AS last, sum(tx_calls) AS c
+              FROM flows WHERE tx_calls > 0 GROUP BY pid, proc_start ORDER BY c DESC LIMIT 1`,
+      format: 'JSONEachRow',
+    });
+    const [row] = await rs.json<{ pid: number; start: string; first: string; last: string; c: string }>();
+    if (row) {
+      const range = `from=${Number(row.first) - 1000}&to=${Number(row.last) + 3 * 3_600_000}`;
+      const a = await get<BytesPerCallResponse>(`/api/process/${row.pid}/${row.start}/bytes-per-call?${range}`);
+      const h = await get<BytesPerCallResponse>(`/api/history/bytes-per-call?${range}&pid=${row.pid}&start=${row.start}`);
+      assert.equal(a.status, 200);
+      assert.equal(a.body.table, 'flows');
+      assert.equal(a.body.total.totalCalls, Number(row.c));
+      assert.deepEqual(h.body, a.body);
+    }
+  } finally {
+    await ch.close();
+  }
+  const none = await get<BytesPerCallResponse>('/api/process/1/18446744073709551615/bytes-per-call');
+  assert.equal(none.status, 200);
+  assert.deepEqual([none.body.rows, none.body.total.totalCalls], [[], 0]);
+  for (const q of ['dir=both', 'by=uid', 'pid=1', 'pid=x&start=1', 'from=5&to=1']) assert.equal((await get(`/api/history/bytes-per-call?${q}`)).status, 400, q);
+  assert.equal((await get('/api/process/1/1/bytes-per-call?dir=sum')).status, 400);
 });
 
 test('history lifecycle: processes whose first I/O or end is in range, largest first, filters', async () => {
