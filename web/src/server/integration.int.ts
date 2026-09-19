@@ -42,6 +42,12 @@ import { createClickHouse } from './db/clickhouse.ts';
 
 const PORT = Number(process.env.INT_PORT ?? 8797);
 const BASE = `http://127.0.0.1:${PORT}`;
+
+// Range end for tests that compare two queries: two whole minutes back, so rows
+// the running collector is still writing can't land between the two reads.
+function settledNow(): number {
+  return Math.floor(Date.now() / 60_000) * 60_000 - 120_000;
+}
 let server: ChildProcess;
 
 async function get<T>(path: string): Promise<{ status: number; body: T }> {
@@ -125,7 +131,7 @@ test('live flows: mean kbps per (name, proto, app, ip, port), largest first', as
 });
 
 test('history flows: bytes per destination, both tables, dest filter', async () => {
-  const now = Date.now();
+  const now = settledNow();
   const week = await get<HistoryFlowsResponse>(`/api/history/flows?from=${now - 7 * 86_400_000}&to=${now}&limit=50`);
   assert.equal(week.status, 200);
   assert.equal(week.body.range.table, 'flows_1m');
@@ -184,7 +190,7 @@ function bytesOf(b: ThroughputResponse, dir: 'tx' | 'rx'): number {
 }
 
 test('history throughput: padded kbps per top key, both tables, filters, drill keys', async () => {
-  const now = Date.now();
+  const now = settledNow();
   const day = await get<ThroughputResponse>(`/api/history/throughput?from=${now - 86_400_000}&to=${now}`);
   assert.equal(day.status, 200);
   assert.equal(day.body.table, 'flows_1m');
@@ -246,7 +252,7 @@ function ghostBytes(c: ThroughputCompare, to: number, dir: 'tx' | 'rx'): number 
 }
 
 test('history throughput compare: the earlier window shifted onto the range, null before the data', async () => {
-  const now = Date.now();
+  const now = settledNow();
   const DAY = 86_400_000;
   const plain = await get<ThroughputResponse>(`/api/history/throughput?from=${now - DAY}&to=${now}`);
   assert.equal(plain.body.compare, undefined);
@@ -304,7 +310,7 @@ test('history throughput compare: the earlier window shifted onto the range, nul
 });
 
 test('history throughput unknown: the unlabelled share per bucket, on the main grid, filters', async () => {
-  const now = Date.now();
+  const now = settledNow();
   const DAY = 86_400_000;
   for (const span of [DAY, 3_600_000]) {
     const from = now - span;
@@ -334,7 +340,7 @@ test('history throughput unknown: the unlabelled share per bucket, on the main g
 });
 
 test('history throughput calls: calls per second on the main grid, totals match flows, filters', async () => {
-  const now = Date.now();
+  const now = settledNow();
   const ch = createClickHouse(config.clickhouse);
   try {
     for (const span of [86_400_000, 3_600_000]) {
@@ -486,7 +492,7 @@ test('process calls: one instance from raw flows, bytes and calls per bucket', a
 });
 
 test('history bytes-per-call: calls per bucket match the table, top keys, filters, one instance', async () => {
-  const now = Date.now();
+  const now = settledNow();
   const ch = createClickHouse(config.clickhouse);
   const sumCalls = (r: { calls: number[] }) => r.calls.reduce((a, v) => a + v, 0);
   try {
@@ -563,7 +569,7 @@ test('history bytes-per-call: calls per bucket match the table, top keys, filter
 });
 
 test('history lifecycle: processes whose first I/O or end is in range, largest first, filters', async () => {
-  const now = Date.now();
+  const now = settledNow();
   const range = `from=${now - 7 * 86_400_000}&to=${now}`;
   const all = await get<LifecycleResponse>(`/api/history/lifecycle?${range}`);
   assert.equal(all.status, 200);
@@ -604,7 +610,7 @@ test('history lifecycle: processes whose first I/O or end is in range, largest f
 });
 
 test('history lifetimes: instances overlapping the range, latest start first, name/uid filters, cap', async () => {
-  const now = Date.now();
+  const now = settledNow();
   const from = now - 7 * 86_400_000;
   const range = `from=${from}&to=${now}`;
   const all = await get<LifetimesResponse>(`/api/history/lifetimes?${range}`);
@@ -662,7 +668,7 @@ test('history lifetimes: instances overlapping the range, latest start first, na
 });
 
 test('history scatter: per instance or name, lifetime or range, largest first, filters', async () => {
-  const now = Date.now();
+  const now = settledNow();
   const range = `from=${now - 7 * 86_400_000}&to=${now}`;
   const check = (b: ScatterResponse, group: string, basis: string) => {
     assert.equal(b.group, group);
@@ -851,7 +857,7 @@ test('history treemap: users → processes → apps, sums match the summary, dir
 });
 
 test('history throughput: the rollup query uses the minute key', async () => {
-  const now = Date.now();
+  const now = settledNow();
   const r = alignRange(parseRange({ from: String(now - 30 * 86_400_000), to: String(now) }, now));
   assert.equal(r.table, 'flows_1m');
   const ch = createClickHouse(config.clickhouse);
@@ -874,7 +880,7 @@ test('history throughput: the rollup query uses the minute key', async () => {
 });
 
 test('history filters apply to summary and flows', async () => {
-  const now = Date.now();
+  const now = settledNow();
   const from = now - 86_400_000;
   const { body } = await get<HistoryFlowsResponse>(`/api/history/flows?from=${from}&to=${now}&limit=20`);
   const top = body.flows[0];
@@ -910,7 +916,7 @@ test('live events: hello first', async () => {
 });
 
 test('history summary: shape, resolution and validation', async () => {
-  const now = Date.now();
+  const now = settledNow();
   const { status, body } = await get<HistorySummary>(`/api/history/summary?from=${now - 7 * 86_400_000}&to=${now}`);
   assert.equal(status, 200);
   assert.deepEqual(Object.keys(body.range).sort(), ['from', 'step', 'table', 'to']);
@@ -973,7 +979,7 @@ test('ClickHouse: DISPLAY_IP and toIPv6 round-trip', async () => {
 });
 
 test('beacons: ticks per destination match the table, periodic first, ranges capped', async () => {
-  const now = Date.now();
+  const now = settledNow();
   const ch = createClickHouse(config.clickhouse);
   const sorted = (b: BeaconsResponse) =>
     b.dests.forEach((d, i) => {
@@ -1047,7 +1053,7 @@ test('beacons: ticks per destination match the table, periodic first, ranges cap
 });
 
 test('new destinations: first contacts match the rollup, exclusions counted, options and bad params', async () => {
-  const now = Date.now();
+  const now = settledNow();
   const range = `from=${now - 7 * 86_400_000}&to=${now}`;
   // Warm-up shown: on a young table everything is in it.
   const all = await get<NewDestsResponse>(`/api/history/new-dests?${range}&warmup=1`);
