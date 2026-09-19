@@ -1,5 +1,6 @@
 import { useEffect, type ReactNode } from 'react';
 import { StatusPill } from './components/StatusPill.tsx';
+import { DestinationsPage } from './pages/DestinationsPage.tsx';
 import { HistoryPage } from './pages/HistoryPage.tsx';
 import { LivePage } from './pages/LivePage.tsx';
 import { ProcessPage } from './pages/ProcessPage.tsx';
@@ -9,11 +10,13 @@ import { useHealth } from './useHealth.ts';
 const NAV = [
   { href: '/live', label: 'Live' },
   { href: '/history', label: 'History' },
+  { href: '/destinations', label: 'Destinations' },
 ] as const;
 
 function Route({ path }: { path: string }): ReactNode {
   if (matchPath('/live', path)) return <LivePage />;
   if (matchPath('/history', path)) return <HistoryPage />;
+  if (matchPath('/destinations', path)) return <DestinationsPage />;
   const proc = matchPath('/process/:pid/:start', path);
   // `key` resets page state when moving between processes.
   if (proc) return <ProcessPage key={`${proc.pid}:${proc.start}`} pid={proc.pid!} start={proc.start!} />;

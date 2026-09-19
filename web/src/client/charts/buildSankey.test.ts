@@ -164,3 +164,26 @@ test('orders each layer by main app, then label; buckets last in their group', (
   assert.deepEqual(ids(g, 0), ['p:zeta', 'p:mid', 'p:alpha']); // DNS, HTTPS, SSH
   assert.deepEqual(ids(g, 2), ['d:8.8.8.8:53', 'd:9.9.9.9:53', 'd:5.5.5.5:443', 'd:1.1.1.1:22', UNKNOWN_PEER]);
 });
+
+test('18: known destinations are labelled org (ip:port); byAsn collapses them per ASN', () => {
+  const google = { asn: 15169, org: 'Google LLC', cc: 'US' };
+  const flows = [
+    flow('chrome', 'HTTPS', '2607:f8b0::5f', 443, 10, 90, { geo: google }),
+    flow('curl', 'HTTPS', '2001:4860::1', 443, 5, 5, { geo: google }),
+    flow('curl', 'DNS', '192.168.1.1', 53, 1, 1),
+    flow('avahi', 'mDNS', '0.0.0.0', 0, 2, 0, { proto: 'UDP' }),
+  ];
+  const g = buildSankey(flows, { dir: 'both' });
+  assert.equal(node(g, 'd:[2607:f8b0::5f]:443')!.label, 'Google ([2607:f8b0::5f]:443)');
+  assert.equal(node(g, 'd:[2607:f8b0::5f]:443')!.target, '[2607:f8b0::5f]:443');
+  assert.equal(node(g, 'd:192.168.1.1:53')!.label, '192.168.1.1:53');
+
+  const a = buildSankey(flows, { dir: 'both', byAsn: true });
+  assert.deepEqual(ids(a, 2).sort(), [UNKNOWN_PEER, 'd:192.168.1.1:53', 'd:AS15169'].sort());
+  const n = node(a, 'd:AS15169')!;
+  assert.equal(n.label, 'AS15169 Google');
+  assert.equal(n.asn, 15169);
+  assert.equal(n.target, undefined, 'not a History dest filter');
+  assert.equal(n.value, 110);
+  assertConserved(a);
+});

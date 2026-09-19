@@ -5,6 +5,10 @@ import assert from 'node:assert/strict';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { after, before, test } from 'node:test';
 import type {
+  AsnResponse,
+  CountriesResponse,
+  DestinationsResponse,
+  RdnsResponse,
   BeaconsResponse,
   BurstResponse,
   BytesPerCallResponse,
@@ -33,6 +37,7 @@ import { parseRange } from './ch/range.ts';
 import { DISPLAY_IP } from './ch/sql.ts';
 import { alignRange, compareQuery, FIRST_MINUTE_SQL, throughputQuery } from './ch/throughput.ts';
 import { config } from './config.ts';
+import { orgDestLabel } from '../shared/org.ts';
 import { createClickHouse } from './db/clickhouse.ts';
 
 const PORT = Number(process.env.INT_PORT ?? 8797);
@@ -47,13 +52,14 @@ async function get<T>(path: string): Promise<{ status: number; body: T }> {
 before(async () => {
   server = spawn(process.execPath, ['src/server/index.ts'], {
     cwd: new URL('../../', import.meta.url),
-    env: { ...process.env, WEB_PORT: String(PORT), LOG_LEVEL: 'warn' },
+    // 18: the hand-written fixture table, not a real download; reverse DNS off.
+    env: { ...process.env, WEB_PORT: String(PORT), LOG_LEVEL: 'warn', GEOIP_FILE: 'src/server/geo/fixtures/ip2asn-test.tsv', RDNS: '0' },
     stdio: ['ignore', 'inherit', 'inherit'],
   });
   for (let i = 0; i < 50; i++) {
     try {
       const { body } = await get<HealthResponse>('/api/health');
-      if (body.redis.ok) return;
+      if (body.redis.ok && body.geo.loaded) return;
     } catch {}
     await new Promise((r) => setTimeout(r, 200));
   }
@@ -1108,4 +1114,134 @@ test('new destinations: first contacts match the rollup, exclusions counted, opt
   for (const q of ['limit=0', 'limit=2001', 'ports=2', 'warmup=yes', 'from=5&to=4']) {
     assert.equal((await get(`/api/history/new-dests?${q}`)).status, 400, q);
   }
+});
+
+// 18: a fixed past range of whole minutes, so the collector's writes do not move the sums between queries.
+const geoRange = () => {
+  const to = Math.floor(Date.now() / 60_000) * 60_000 - 120_000;
+  return `from=${to - 7 * 86_400_000}&to=${to}`;
+};
+
+test('geo: health reports the fixture table, rdns off', async () => {
+  const { body } = await get<HealthResponse>('/api/health');
+  assert.equal(body.geo.loaded, true);
+  assert.equal(body.geo.entries, 20);
+  assert.equal(body.geo.error, null);
+  assert.equal(typeof body.geo.fileDate, 'number');
+  assert.equal(body.rdns, false);
+});
+
+test('geo asn / countries: grouped per-IP sums add up to the summary, largest first, dir, filters, bad params', async () => {
+  const range = geoRange();
+  const [asn, countries, summary] = await Promise.all([
+    get<AsnResponse>(`/api/history/asn?${range}`),
+    get<CountriesResponse>(`/api/history/countries?${range}`),
+    get<HistorySummary>(`/api/history/summary?${range}`),
+  ]);
+  assert.equal(asn.status, 200);
+  const a = asn.body;
+  assert.equal(a.geo, true);
+  assert.equal(a.table, 'flows_1m');
+  assert.equal(a.dir, 'total');
+  const sum = (rows: { bytes: number }[]) => rows.reduce((s, r) => s + r.bytes, 0);
+  assert.equal(sum(a.rows) + a.local.bytes + a.unmatched.bytes, a.coverage.bytes, 'every examined byte lands in one group');
+  assert.ok(a.coverage.ips <= 5000 && a.coverage.ips <= a.coverage.totalIps);
+  if (a.coverage.ips < a.coverage.totalIps) assert.ok(a.coverage.bytes <= a.coverage.totalBytes);
+  else assert.equal(a.coverage.bytes, a.coverage.totalBytes);
+  assert.equal(a.coverage.totalBytes, summary.body.txBytes + summary.body.rxBytes, 'totals match the summary');
+  for (let i = 1; i < a.rows.length; i++) assert.ok(a.rows[i - 1]!.bytes >= a.rows[i]!.bytes, 'largest first');
+  for (const r of a.rows) {
+    assert.equal(r.bytes, r.tx + r.rx);
+    assert.ok(r.asn > 0 && r.ips > 0 && typeof r.org === 'string');
+  }
+  // The data has plenty of Google (IPv6) and loopback traffic; the fixture knows Google.
+  assert.ok(a.rows.some((r) => r.asn === 15169 && r.org === 'Google LLC' && r.country === 'US'));
+  assert.ok(a.local.ips > 0);
+
+  assert.equal(countries.status, 200);
+  const c = countries.body;
+  assert.deepEqual(c.local, a.local);
+  assert.equal(sum(c.rows), sum(a.rows), 'every fixture range has a country');
+  assert.ok(c.rows.some((r) => r.country === 'US'));
+
+  const tx = await get<AsnResponse>(`/api/history/asn?${range}&dir=tx`);
+  assert.equal(tx.body.dir, 'tx');
+  for (const r of tx.body.rows) assert.equal(r.bytes, r.tx);
+  assert.equal(tx.body.coverage.totalBytes, summary.body.txBytes);
+
+  const none = await get<AsnResponse>(`/api/history/asn?${range}&app=no-such-app`);
+  assert.deepEqual(none.body.rows, []);
+  assert.equal(none.body.coverage.totalBytes, 0);
+
+  for (const q of ['dir=both', 'from=5&to=4', 'uid=x']) {
+    assert.equal((await get(`/api/history/asn?${q}`)).status, 400, q);
+    assert.equal((await get(`/api/history/countries?${q}`)).status, 400, q);
+  }
+});
+
+test('geo destinations: (ip, port) rows with geo, selections, limit, bad params', async () => {
+  const range = geoRange();
+  const all = await get<DestinationsResponse>(`/api/history/destinations?${range}&limit=2000`);
+  assert.equal(all.status, 200);
+  const d = all.body;
+  assert.equal(d.geo, true);
+  assert.equal(d.rdns, false);
+  assert.ok(d.rows.length > 0);
+  assert.ok(d.matched >= d.rows.length && d.matched <= 5000);
+  if (d.matched <= 2000) assert.equal(d.matched, d.rows.length);
+  for (let i = 1; i < d.rows.length; i++) assert.ok(d.rows[i - 1]!.tx + d.rows[i - 1]!.rx >= d.rows[i]!.tx + d.rows[i]!.rx, 'largest first');
+  for (const r of d.rows) {
+    assert.equal(r.dest, r.ip.includes(':') ? `[${r.ip}]:${r.port}` : `${r.ip}:${r.port}`);
+    assert.ok(r.procs >= 1 && r.names.length >= 1 && r.names.length <= 5);
+    if (r.local) assert.equal(r.geo, undefined);
+  }
+  assert.ok(d.rows.some((r) => r.ip === '127.0.0.1' && r.local));
+  assert.ok(d.rows.some((r) => r.geo?.asn === 15169));
+
+  const asn = await get<AsnResponse>(`/api/history/asn?${range}`);
+  const google = asn.body.rows.find((r) => r.asn === 15169)!;
+  const g = await get<DestinationsResponse>(`/api/history/destinations?${range}&asn=15169&limit=2000`);
+  assert.ok(g.body.rows.length > 0);
+  for (const r of g.body.rows) assert.equal(r.geo?.asn, 15169);
+  // Per (ip, port) sums of one ASN add up to its per-IP sums, when no pair was cut.
+  if (!g.body.truncated && g.body.rows.length === g.body.matched) assert.equal(g.body.rows.reduce((s, r) => s + r.tx + r.rx, 0), google.bytes);
+
+  const us = await get<DestinationsResponse>(`/api/history/destinations?${range}&cc=US&limit=5`);
+  assert.ok(us.body.rows.length <= 5);
+  assert.ok(us.body.matched >= us.body.rows.length);
+  for (const r of us.body.rows) assert.equal(r.geo?.cc, 'US');
+  const local = await get<DestinationsResponse>(`/api/history/destinations?${range}&scope=local`);
+  for (const r of local.body.rows) assert.equal(r.local, true);
+  const unmatched = await get<DestinationsResponse>(`/api/history/destinations?${range}&scope=unmatched`);
+  for (const r of unmatched.body.rows) assert.ok(!r.local && !r.geo);
+
+  for (const q of ['asn=0', 'asn=AS1', 'cc=us', 'scope=x', 'limit=0', 'limit=2001', 'dir=both']) {
+    assert.equal((await get(`/api/history/destinations?${q}`)).status, 400, q);
+  }
+});
+
+test('geo enrichment: flows, throughput by dest and new-dests carry geo for known IPs only', async () => {
+  const range = geoRange();
+  const flows = await get<HistoryFlowsResponse>(`/api/history/flows?${range}&limit=500`);
+  assert.ok(flows.body.flows.some((f) => f.geo?.asn === 15169));
+  for (const f of flows.body.flows) {
+    if (f.ip === '127.0.0.1' || f.ip.startsWith('192.168.') || f.ip === '0.0.0.0') assert.equal(f.geo, undefined, f.ip);
+  }
+  const tp = await get<ThroughputResponse>(`/api/history/throughput?${range}&by=dest&top=20`);
+  assert.equal(tp.status, 200);
+  for (const [key, geo] of Object.entries(tp.body.geo ?? {})) {
+    assert.ok(tp.body.keys.includes(key));
+    assert.equal(tp.body.labels[key], orgDestLabel(geo, key));
+  }
+  const nd = await get<NewDestsResponse>(`/api/history/new-dests?${range}&warmup=1&loopback=1`);
+  for (const d of nd.body.dests) if (d.loopback) assert.equal(d.geo, undefined);
+  const live = await get<LiveFlowsResponse>('/api/live/flows?seconds=30');
+  for (const f of live.body.flows) if (f.geo) assert.ok(f.geo.asn > 0);
+});
+
+test('rdns: off unless RDNS=1, addresses validated', async () => {
+  const r = await get<RdnsResponse>('/api/rdns?ips=1.1.1.1,2606:4700::1111');
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body, { enabled: false, names: {}, pending: [] });
+  assert.equal((await get('/api/rdns?ips=example.com')).status, 400);
 });

@@ -1,3 +1,4 @@
+import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 /** web/ — the app root, whichever directory the server was started from. */
@@ -39,6 +40,13 @@ export const config = {
   },
   /** Ticks the live hub loads at startup and keeps in memory (1 s each). */
   liveBackfill: int('LIVE_BACKFILL', 900, 1, 86_400),
+  /**
+   * The iptoasn.com table (18): `ip2asn-combined.tsv`, gzipped or not. A
+   * missing file only means no ASN/country enrichment. Relative to web/.
+   */
+  geoipFile: resolve(appRoot, env('GEOIP_FILE', 'data/ip2asn-combined.tsv.gz')),
+  /** Reverse DNS on demand for the destination table (sends queries from this host). */
+  rdns: env('RDNS', '0') === '1',
   /** Built SPA; served only if it exists (in dev, Vite serves the client). */
   clientDir: `${appRoot}dist/client`,
 } as const;

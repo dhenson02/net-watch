@@ -15,6 +15,10 @@ export interface HealthResponse {
   uptimeS: number;
   redis: BackendStatus;
   clickhouse: BackendStatus;
+  /** The local IP → ASN table (18); `loaded: false` without one. */
+  geo: GeoStatus;
+  /** Reverse DNS lookups are enabled (`RDNS=1`, 18). */
+  rdns: boolean;
 }
 
 /** Error body of every non-2xx API response. */
@@ -210,6 +214,8 @@ export interface FlowAgg {
   rx: number;
   /** `pid:start_ns` of this row's busiest instance of `name`, for click-through. */
   id: string;
+  /** ASN, org and country of `ip` (18); absent without a geo table or for local addresses. */
+  geo?: Geo;
 }
 
 /** `/api/live/flows`: flows averaged over the hub's last ticks. */
@@ -270,6 +276,11 @@ export interface ThroughputResponse {
   unknown?: ThroughputUnknown;
   /** Present when `calls=1` was requested (14): call rates over every key, filtered alike. */
   calls?: ThroughputCalls;
+  /**
+   * With `by=dest` and a geo table (18): the ASN, org and country of each key
+   * the table knows. Those keys also get a `labels` entry, `org (ip:port)`.
+   */
+  geo?: Record<string, Geo>;
 }
 
 /**
@@ -642,6 +653,8 @@ export interface BeaconDest {
   dest: string;
   ip: string;
   rport: number;
+  /** ASN, org and country of `ip` (18), when known. */
+  geo?: Geo;
   /** TCP/UDP; in name scope the one with the most bytes. */
   proto: string;
   /** The app label; in name scope the one with the most bytes. */
@@ -696,6 +709,8 @@ export interface NewDest {
   name: string;
   /** Plain IPv4, or IPv6. */
   ip: string;
+  /** ASN, org and country of `ip` (18), when known. */
+  geo?: Geo;
   /** The key's port when keyed by port; else the port of the first contact. */
   port: number;
   /** `ip:port`, IPv6 as `[addr]:port`: the History `filter.dest` value. */
@@ -729,4 +744,130 @@ export interface NewDestsResponse {
   hidden: { loopback: number; warmup: number };
   /** The end of the warm-up (the table's first minute + 24 h), ms; null while the table is empty. */
   warmupUntil: number | null;
+}
+
+// ---------------------------------------------------------------------------
+// Geo / ASN enrichment (18): a local iptoasn.com table, looked up by the server
+
+/** What the geo table says about a public address. */
+export interface Geo {
+  asn: number;
+  /** The org part of the AS description ("Amazon.com, Inc."), or the AS name ("GOOGLE"). */
+  org: string;
+  /** ISO 3166 alpha-2 of the range's registration; '' when the table has none. */
+  cc: string;
+}
+
+/** `/api/health`'s `geo`. */
+export interface GeoStatus {
+  loaded: boolean;
+  /** IPv4 + IPv6 ranges. */
+  entries: number;
+  /** The file's modification time (ms), to spot a stale table; null when none is loaded. */
+  fileDate: number | null;
+  /** Why no table is loaded (file missing, unreadable); null when fine. */
+  error: string | null;
+}
+
+/** The ASN and country views rank and sum by this: tx + rx, or one direction. */
+export type GeoDir = 'total' | 'tx' | 'rx';
+
+/** The ASN and country views group the per-IP sums of at most this many IPs (the largest). */
+export const GEO_IP_LIMIT = 5000;
+
+/** Bytes and distinct IPs of a group of addresses. */
+export interface GeoSum {
+  tx: number;
+  rx: number;
+  /** tx + rx, or one of them, as `dir` says. */
+  bytes: number;
+  ips: number;
+}
+
+/** Shared by `/api/history/asn` and `/api/history/countries`. */
+export interface GeoBreakdown {
+  from: number;
+  to: number;
+  table: 'flows' | 'flows_1m';
+  dir: GeoDir;
+  /** A geo table is loaded; without one `rows` is empty and every public byte is `unmatched`. */
+  geo: boolean;
+  /**
+   * The grouping runs in the server over the GEO_IP_LIMIT largest IPs:
+   * `ips` of `totalIps` distinct addresses, carrying `bytes` of `totalBytes`.
+   */
+  coverage: { ips: number; totalIps: number; bytes: number; totalBytes: number };
+  /** Private, loopback, link-local, multicast/broadcast and unspecified addresses: never on the map. */
+  local: GeoSum;
+  /** Public addresses the table does not know. */
+  unmatched: GeoSum;
+}
+
+export interface AsnRow extends GeoSum {
+  asn: number;
+  org: string;
+  /** The country with the most of this ASN's bytes here. */
+  country: string;
+}
+
+/** `/api/history/asn`: bytes per ASN, largest first. */
+export interface AsnResponse extends GeoBreakdown {
+  rows: AsnRow[];
+}
+
+export interface CountryRow extends GeoSum {
+  /** ISO 3166 alpha-2 of the address range's registration. */
+  country: string;
+}
+
+/** `/api/history/countries`: bytes per country, largest first. */
+export interface CountriesResponse extends GeoBreakdown {
+  rows: CountryRow[];
+}
+
+/** The destination table narrows to one of these (`scope`). */
+export type DestScope = 'all' | 'public' | 'local' | 'unmatched';
+
+/** One (ip, port) of the destination table. */
+export interface DestRow {
+  ip: string;
+  port: number;
+  /** `ip:port`, IPv6 as `[addr]:port`: the History `filter.dest` value. */
+  dest: string;
+  geo?: Geo;
+  /** Not a public address (see GeoBreakdown.local). */
+  local: boolean;
+  /** App and proto with the most bytes. */
+  app: string;
+  proto: string;
+  tx: number;
+  rx: number;
+  /** Process instances (pid, start) that used it. */
+  procs: number;
+  /** Up to 5 of their names. */
+  names: string[];
+}
+
+/** `/api/history/destinations`: (ip, port) pairs over a range, largest first. */
+export interface DestinationsResponse {
+  from: number;
+  to: number;
+  table: 'flows' | 'flows_1m';
+  dir: GeoDir;
+  geo: boolean;
+  /** Reverse DNS is enabled (`/api/rdns`). */
+  rdns: boolean;
+  rows: DestRow[];
+  /** Examined pairs that matched `asn`/`cc`/`scope` (rows is cut to `limit`). */
+  matched: number;
+  /** More (ip, port) pairs had traffic than the GEO_IP_LIMIT examined; the smallest were left out. */
+  truncated: boolean;
+}
+
+/** `/api/rdns`: PTR names; null where there is none (or the lookup failed or ran out of time). */
+export interface RdnsResponse {
+  enabled: boolean;
+  names: Record<string, string | null>;
+  /** Addresses not looked up this time (over the per-request budget); ask again. */
+  pending: string[];
 }

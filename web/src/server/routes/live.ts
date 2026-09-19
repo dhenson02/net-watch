@@ -2,6 +2,7 @@ import type { ServerResponse } from 'node:http';
 import type { FastifyInstance } from 'fastify';
 import type { CompactTick, LiveFlowsResponse, LiveHello, LiveMeta, LiveSnapshot, LiveSnapshotResponse } from '../../shared/api.ts';
 import type { Redis } from '../db/redis.ts';
+import type { GeoDb } from '../geo/asn.ts';
 import { HttpError } from '../http-error.ts';
 import { aggregateFlows, snapshotRows } from '../live/compact.ts';
 import { RECENT_FLOWS, type LiveHub } from '../live/hub.ts';
@@ -15,8 +16,8 @@ const MAX_BUFFERED_BYTES = 1 << 20;
 /** A numeric hash field, or null when the collector has not written it. */
 const num = (v: string | undefined) => (v === undefined || v === '' || !Number.isFinite(Number(v)) ? null : Number(v));
 
-export function liveRoutes(app: FastifyInstance, deps: { hub: LiveHub; redis: Redis; users: Users }) {
-  const { hub, redis, users } = deps;
+export function liveRoutes(app: FastifyInstance, deps: { hub: LiveHub; redis: Redis; users: Users; geo: GeoDb }) {
+  const { hub, redis, users, geo } = deps;
 
   app.get<{ Querystring: { seconds?: string } }>('/api/live/series', async (req): Promise<CompactTick[]> => {
     const raw = req.query.seconds ?? '900';
@@ -46,7 +47,7 @@ export function liveRoutes(app: FastifyInstance, deps: { hub: LiveHub; redis: Re
     const ts = recent.at(-1)?.ts ?? null;
     if (ts === null) return { ts, ticks: 0, flows: [] };
     if (flowsCache?.ts !== ts || flowsCache.seconds !== seconds) {
-      flowsCache = { ts, seconds, res: { ts, ticks: recent.length, flows: aggregateFlows(recent.map((r) => r.flows)) } };
+      flowsCache = { ts, seconds, res: { ts, ticks: recent.length, flows: geo.enrich(aggregateFlows(recent.map((r) => r.flows))) } };
     }
     return flowsCache.res;
   });

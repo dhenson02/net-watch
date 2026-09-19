@@ -85,7 +85,25 @@ export const urls = {
       warmup: p.warmup ? 1 : undefined,
       limit: p.limit,
     })}`,
-  historyScatter:(r: TimeRange, p: { group: string; basis: string; filters: UrlFilters }) =>
+  // 18: bytes per ASN / per country (grouped by the server's geo table), and the destination table.
+  historyAsn: (r: TimeRange, p: { dir: string; filters?: UrlFilters }) =>
+    `/api/history/asn?${qs({ from: r.from, to: r.to, dir: p.dir === 'total' ? undefined : p.dir, ...p.filters })}`,
+  historyCountries: (r: TimeRange, p: { dir: string; filters?: UrlFilters }) =>
+    `/api/history/countries?${qs({ from: r.from, to: r.to, dir: p.dir === 'total' ? undefined : p.dir, ...p.filters })}`,
+  historyDestinations: (r: TimeRange, p: { dir: string; asn?: number | null; cc?: string | null; scope?: string; limit?: number; filters?: UrlFilters }) =>
+    `/api/history/destinations?${qs({
+      from: r.from,
+      to: r.to,
+      dir: p.dir === 'total' ? undefined : p.dir,
+      asn: p.asn ?? undefined,
+      cc: p.cc ?? undefined,
+      scope: p.scope === 'all' ? undefined : p.scope,
+      limit: p.limit,
+      ...p.filters,
+    })}`,
+  // 18: reverse DNS on demand (only with RDNS=1 on the server).
+  rdns: (ips: readonly string[]) => `/api/rdns?${qs({ ips: ips.join(',') })}`,
+  historyScatter: (r: TimeRange, p: { group: string; basis: string; filters: UrlFilters }) =>
     `/api/history/scatter?${qs({ from: r.from, to: r.to, group: p.group, basis: p.basis, ...p.filters })}`,
 };
 

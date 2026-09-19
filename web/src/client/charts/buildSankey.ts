@@ -1,6 +1,7 @@
 // The process → app protocol → destination graph behind the flow Sankey (03).
 // Pure, so it is unit-tested without a browser.
 import type { FlowAgg } from '../../shared/api.ts';
+import { asnLabel, orgDestLabel } from '../destinations/geoView.ts';
 
 export type FlowDir = 'tx' | 'rx' | 'both';
 export type NodeKind = 'proc' | 'app' | 'dest';
@@ -13,6 +14,11 @@ export interface SankeyOptions {
   topDests?: number;
   /** Links under this share of the total are folded into their "other" node. */
   minShare?: number;
+  /**
+   * 18: one node per ASN instead of per ip:port, for destinations the geo
+   * table knows (`FlowAgg.geo`); the others keep their ip:port node.
+   */
+  byAsn?: boolean;
 }
 
 export interface SankeyNode {
@@ -32,6 +38,8 @@ export interface SankeyNode {
   rx: number;
   /** proc: its busiest instance (`pid:start_ns`); dest: `ip:port` for the History filter. */
   target?: string;
+  /** An ASN node (`byAsn`): its AS number, for the Destinations page. */
+  asn?: number;
 }
 
 export interface SankeyLink {
@@ -88,6 +96,8 @@ interface Row {
   name: string;
   id: string;
   destTarget?: string;
+  destLabel?: string;
+  asn?: number;
 }
 
 /**
@@ -97,7 +107,7 @@ interface Row {
  * links by (source, target), so a live refresh keeps its layout.
  */
 export function buildSankey(flows: readonly FlowAgg[], opts: SankeyOptions): SankeyGraph {
-  const { dir, topProcs = 10, topDests = 15, minShare = 0.005 } = opts;
+  const { dir, topProcs = 10, topDests = 15, minShare = 0.005, byAsn = false } = opts;
   const pick = (f: FlowAgg) => (dir === 'tx' ? f.tx : dir === 'rx' ? f.rx : f.tx + f.rx);
 
   // An app label carries its transport when the app appears over both (DNS/UDP, DNS/TCP).
@@ -115,17 +125,20 @@ export function buildSankey(flows: readonly FlowAgg[], opts: SankeyOptions): San
     const label = appLabel(f);
     const unknown = isUnknownPeer(f.ip, f.rport);
     const key = destKey(f.ip, f.rport);
+    const asn = byAsn && !unknown && f.geo ? f.geo.asn : undefined;
     const row: Row = {
       proc: `p:${f.name}`,
       app: `a:${label}`,
       appLabel: label,
-      dest: unknown ? UNKNOWN_PEER : `d:${key}`,
+      // `d:AS…` cannot collide with `d:<ip:port>`: an address never starts with "AS".
+      dest: unknown ? UNKNOWN_PEER : asn !== undefined ? `d:AS${asn}` : `d:${key}`,
       value,
       tx: dir === 'rx' ? 0 : f.tx,
       rx: dir === 'tx' ? 0 : f.rx,
       name: f.name,
       id: f.id,
-      ...(!unknown && { destTarget: key }),
+      ...(!unknown && asn === undefined && { destTarget: key, destLabel: orgDestLabel(f.geo, key) }),
+      ...(asn !== undefined && { asn, destLabel: asnLabel(f.geo!) }),
     };
     rows.push(row);
     total += value;
@@ -186,7 +199,9 @@ export function buildSankey(flows: readonly FlowAgg[], opts: SankeyOptions): San
           ? { id: r.dest, label: 'unknown peer', depth: 2, kind: 'dest', bucket: true }
           : r.dest.startsWith('d*')
             ? { id: r.dest, label: `other (${r.appLabel})`, depth: 2, kind: 'dest', bucket: true }
-            : { id: r.dest, label: r.destTarget!, depth: 2, kind: 'dest', bucket: false, target: r.destTarget! },
+            : r.asn !== undefined
+              ? { id: r.dest, label: r.destLabel!, depth: 2, kind: 'dest', bucket: false, asn: r.asn }
+              : { id: r.dest, label: r.destLabel!, depth: 2, kind: 'dest', bucket: false, target: r.destTarget! },
       r,
     );
     link(r.proc, r.app, r);

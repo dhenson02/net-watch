@@ -57,6 +57,10 @@ type Props = {
   slots: SlotAssigner;
   /** A destination node was clicked (`ip:port`). */
   onDest: (dest: string) => void;
+  /** 18: destinations collapsed to one node per ASN (flows with `geo`). */
+  byAsn?: boolean;
+  /** An ASN node was clicked. */
+  onAsn?: (asn: number) => void;
 };
 
 /**
@@ -65,7 +69,7 @@ type Props = {
  * clicking a process opens its busiest instance, clicking a destination
  * filters the History page to it.
  */
-export function FlowSankey({ flows: incoming, mode, dir, slots, onDest }: Props) {
+export function FlowSankey({ flows: incoming, mode, dir, slots, onDest, byAsn = false, onAsn }: Props) {
   const scheme = useColorScheme();
   // Live: hold the picture while the pointer is over the chart, so a refresh
   // does not drop the hover highlight or move the node being read.
@@ -73,7 +77,7 @@ export function FlowSankey({ flows: incoming, mode, dir, slots, onDest }: Props)
   const shown = useRef(incoming);
   if (!(hovering && mode === 'live')) shown.current = incoming;
   const flows = shown.current;
-  const graph = useMemo(() => buildSankey(flows, { dir }), [flows, dir]);
+  const graph = useMemo(() => buildSankey(flows, { dir, byAsn }), [flows, dir, byAsn]);
   const procSlots = useMemo(() => {
     // Rank order: the largest process gets the first free slot.
     const procs = graph.nodes.filter((n) => n.kind === 'proc' && !n.bucket).sort((a, b) => b.value - a.value);
@@ -81,8 +85,8 @@ export function FlowSankey({ flows: incoming, mode, dir, slots, onDest }: Props)
   }, [graph, slots]);
 
   // Click and tooltip handlers read the latest graph without re-binding.
-  const latest = useRef<{ graph: SankeyGraph; onDest: (d: string) => void }>({ graph, onDest });
-  latest.current = { graph, onDest };
+  const latest = useRef<{ graph: SankeyGraph; onDest: (d: string) => void; onAsn?: (asn: number) => void }>({ graph, onDest, onAsn });
+  latest.current = { graph, onDest, onAsn };
 
   const option = useMemo<EChartsCoreOption>(() => {
     const fmt = formatter(mode);
@@ -100,7 +104,9 @@ export function FlowSankey({ flows: incoming, mode, dir, slots, onDest }: Props)
           ? 'click to open its busiest instance'
           : n.kind === 'dest' && n.target
             ? `click to ${mode === 'live' ? 'open History filtered to it' : 'filter this page to it'}`
-            : '';
+            : n.asn !== undefined
+              ? 'click to list its destinations'
+              : '';
       const share = graph.total > 0 ? ` · ${((n.value / graph.total) * 100).toFixed(1)}%` : '';
       return (
         `<b>${esc(n.label)}</b>: ${fmt(n.value)}${share}${breakdown(n, dir, fmt)}` + (hint ? `<div class="muted" style="font-size:11px">${hint}</div>` : '')
@@ -146,6 +152,7 @@ export function FlowSankey({ flows: incoming, mode, dir, slots, onDest }: Props)
       click: (p: any) => {
         if (p.dataType !== 'node') return;
         const n = latest.current.graph.nodes.find((x) => x.id === p.name);
+        if (n?.asn !== undefined) latest.current.onAsn?.(n.asn);
         if (!n?.target) return;
         if (n.kind === 'proc') openProcess(n.target);
         else if (n.kind === 'dest') latest.current.onDest(n.target);
@@ -173,6 +180,33 @@ function useDir(): [FlowDir, (d: FlowDir) => void] {
   return [dir, (d) => set(d, { replace: true })];
 }
 
+/** 18: `flow_asn=1` collapses destinations to one node per ASN. */
+function useByAsn(): [boolean, (v: boolean) => void] {
+  const [raw, set] = useSearchParam('flow_asn', '0');
+  return [raw === '1', (v) => set(v ? '1' : '0', { replace: true })];
+}
+
+const ASN_OPTIONS = [
+  { value: 'ip', label: 'ip:port' },
+  { value: 'asn', label: 'ASN', title: 'One node per network (ASN) instead of per address; local and unknown addresses stay as they are' },
+] as const;
+
+/** The toggle, shown only when some flow carries geo (a geo table is loaded). */
+function AsnControl({ flows, byAsn, onChange }: { flows: readonly FlowAgg[] | undefined; byAsn: boolean; onChange: (v: boolean) => void }) {
+  if (!flows?.some((f) => f.geo)) return null;
+  return (
+    <SegmentedControl<'ip' | 'asn'> label="Destination nodes" options={ASN_OPTIONS} value={byAsn ? 'asn' : 'ip'} onChange={(v) => onChange(v === 'asn')} />
+  );
+}
+
+/** The Destinations page for one ASN, over `range` when given. */
+function openAsn(asn: number, range?: TimeRange) {
+  const p = new URLSearchParams(range ? { from: String(range.from), to: String(range.to) } : {});
+  p.set('asn', String(asn));
+  navigate(`/destinations?${p}`);
+  scrollTo(0, 0);
+}
+
 const DirControl = ({ dir, onChange }: { dir: FlowDir; onChange: (d: FlowDir) => void }) => (
   <SegmentedControl label="Direction" options={DIR_OPTIONS} value={dir} onChange={onChange} />
 );
@@ -185,6 +219,7 @@ const EXPLAIN: Record<Mode, string> = {
 /** The Sankey on the Live page: mean rates over the last 10 s, refreshed every 2 s. */
 export function LiveFlowSankey({ slots }: { slots: SlotAssigner }) {
   const [dir, setDir] = useDir();
+  const [byAsn, setByAsn] = useByAsn();
   const poll = usePoll<LiveFlowsResponse>(urls.liveFlows(LIVE_SECONDS), LIVE_POLL_MS);
   const d = poll.data;
   const onDest = (dest: string) => navigate(`/history?${new URLSearchParams({ [DEST_PARAM]: dest })}`);
@@ -201,9 +236,14 @@ export function LiveFlowSankey({ slots }: { slots: SlotAssigner }) {
       loading={!d && !poll.error}
       error={!d ? poll.error : null}
       empty={d && !d.flows.some((f) => f.tx + f.rx > 0) ? 'No traffic in the last ticks.' : undefined}
-      actions={<DirControl dir={dir} onChange={setDir} />}
+      actions={
+        <>
+          <AsnControl flows={d?.flows} byAsn={byAsn} onChange={setByAsn} />
+          <DirControl dir={dir} onChange={setDir} />
+        </>
+      }
     >
-      {d && <FlowSankey flows={d.flows} mode="live" dir={dir} slots={slots} onDest={onDest} />}
+      {d && <FlowSankey flows={d.flows} mode="live" dir={dir} slots={slots} onDest={onDest} byAsn={byAsn} onAsn={(asn) => openAsn(asn)} />}
     </Panel>
   );
 }
@@ -211,6 +251,7 @@ export function LiveFlowSankey({ slots }: { slots: SlotAssigner }) {
 /** The Sankey on the History page: bytes over the selected range, with the page's filters. */
 export function HistoryFlowSankey({ range, filters, slots }: { range: TimeRange; filters: Partial<Record<string, string>>; slots: SlotAssigner }) {
   const [dir, setDir] = useDir();
+  const [byAsn, setByAsn] = useByAsn();
   const q = useQuery<HistoryFlowsResponse>(urls.historyFlows(range, filters));
   const dest = filters.dest;
   const d = q.data;
@@ -228,9 +269,14 @@ export function HistoryFlowSankey({ range, filters, slots }: { range: TimeRange;
       loading={q.loading}
       error={q.error}
       empty={d && !d.flows.length ? 'No traffic in this range.' : undefined}
-      actions={<DirControl dir={dir} onChange={setDir} />}
+      actions={
+        <>
+          <AsnControl flows={d?.flows} byAsn={byAsn} onChange={setByAsn} />
+          <DirControl dir={dir} onChange={setDir} />
+        </>
+      }
     >
-      {d && <FlowSankey flows={d.flows} mode="history" dir={dir} slots={slots} onDest={onDest} />}
+      {d && <FlowSankey flows={d.flows} mode="history" dir={dir} slots={slots} onDest={onDest} byAsn={byAsn} onAsn={(asn) => openAsn(asn, range)} />}
     </Panel>
   );
 }

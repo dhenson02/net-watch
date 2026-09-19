@@ -1,10 +1,15 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyBaseLogger, FastifyInstance, FastifyReply } from 'fastify';
 import {
+  type AsnResponse,
+  type CountriesResponse,
+  type DestinationsResponse,
+  GEO_IP_LIMIT,
   BEACON_DEST_LIMIT,
   BEACON_MAX_SPAN_MS,
   type BeaconsResponse,
   type BurstResponse,
   type BytesPerCallResponse,
+  type Geo,
   COMPARE_OFFSET_MS,
   HEATMAP_CELLS,
   type HistoryFlowsResponse,
@@ -35,6 +40,17 @@ import {
   type FirstHourRow,
   type NewDestRow,
 } from '../ch/newDests.ts';
+import {
+  buildDestinations,
+  buildGeoBreakdown,
+  destinationsQuery,
+  ipTotalsQueries,
+  parseDestSelection,
+  parseGeoDir,
+  type DestQueryRow,
+  type IpTotalRow,
+  type TotalsRow,
+} from '../ch/geo.ts';
 import { chQuery, clientGone } from '../ch/query.ts';
 import { parseRange, rangeInfo, rangeParams, timeFilter } from '../ch/range.ts';
 import {
@@ -70,12 +86,18 @@ import {
 import { buildTreemap, parseTreemapDir, TREEMAP_MAX_ROWS, TREEMAP_TOP, treemapQuery, type TreemapRow } from '../ch/treemap.ts';
 import { parseTz } from '../ch/tz.ts';
 import type { ClickHouseClient } from '../db/clickhouse.ts';
+import type { GeoDb } from '../geo/asn.ts';
+import type { ParsedIp } from '../geo/ip.ts';
+import type { Rdns } from '../geo/rdns.ts';
 import { badRequest, HttpError } from '../http-error.ts';
 import type { Users } from '../users.ts';
+import { orgDestLabel } from '../../shared/org.ts';
 
 type RangeQuery = { Querystring: Record<string, string | undefined> };
 
 const MAX_FLOW_ROWS = 2000;
+const DEST_TABLE_LIMIT_DEFAULT = 200;
+const DEST_TABLE_LIMIT_MAX = 2000;
 
 /** An optional integer query parameter in `min..max`. */
 function intInRange(raw: string | undefined, name: string, fallback: number, min: number, max: number): number {
@@ -85,8 +107,10 @@ function intInRange(raw: string | undefined, name: string, fallback: number, min
   return n;
 }
 
-export function historyRoutes(app: FastifyInstance, deps: { clickhouse: ClickHouseClient; users: Users }) {
-  const { clickhouse: ch, users } = deps;
+export function historyRoutes(app: FastifyInstance, deps: { clickhouse: ClickHouseClient; users: Users; geo: GeoDb; rdns: Rdns }) {
+  const { clickhouse: ch, users, geo } = deps;
+  /** The geo table's lookup, or null while none is loaded. */
+  const lookup = () => (geo.loaded ? (ip: ParsedIp) => geo.lookupParsed(ip) : null);
 
   /** Payload totals over a range, with the page's filters; the History page header. */
   app.get<RangeQuery>('/api/history/summary', async (req, reply): Promise<HistorySummary> => {
@@ -147,7 +171,7 @@ export function historyRoutes(app: FastifyInstance, deps: { clickhouse: ClickHou
     const truncated = rows.length > limit;
     return {
       range: rangeInfo(r),
-      flows: rows.slice(0, limit).map((row) => ({ ...row, tx: Number(row.tx), rx: Number(row.rx) })),
+      flows: geo.enrich(rows.slice(0, limit).map((row) => ({ ...row, tx: Number(row.tx), rx: Number(row.rx) }))),
       truncated,
     };
   });
@@ -193,7 +217,18 @@ export function historyRoutes(app: FastifyInstance, deps: { clickhouse: ClickHou
         if (user) labels[key] = uid === UNKNOWN_UID ? user : `${user} (${key})`;
       }
     }
+    // 18: destinations get their ASN org in the label and a geo map.
+    const geoKeys: Record<string, Geo> = {};
+    if (by === 'dest' && geo.loaded) {
+      for (const key of new Set(rows.map((row) => row.key))) {
+        const g = geo.lookup(key.startsWith('[') ? key.slice(1, key.lastIndexOf(']')) : key.slice(0, key.lastIndexOf(':')));
+        if (!g) continue;
+        geoKeys[key] = g;
+        labels[key] = orgDestLabel(g, key);
+      }
+    }
     const out = buildThroughput(rows, r, dir, labels);
+    if (Object.keys(geoKeys).length) out.geo = Object.fromEntries(out.keys.filter((k) => k in geoKeys).map((k) => [k, geoKeys[k]!]));
     if (ghostRows && first) out.compare = buildCompare(ghostRows, r, offset, first[0] ? Number(first[0].first) * 1000 : null);
     if (unkRows) out.unknown = buildUnknown(unkRows, r);
     if (callRows) out.calls = buildCalls(callRows, r);
@@ -365,7 +400,9 @@ export function historyRoutes(app: FastifyInstance, deps: { clickhouse: ClickHou
     const r = capSpan(parseRange(req.query), BEACON_MAX_SPAN_MS.name);
     const { sql, params } = beaconsQuery({ scope: 'name', name, from: r.from, to: r.to, limit: BEACON_DEST_LIMIT + 1 });
     const rows = await chQuery<BeaconRow>(ch, req.log, sql, params, clientGone(reply));
-    return buildBeacons(rows, { ...r, scope: 'name' }, BEACON_DEST_LIMIT);
+    const res = buildBeacons(rows, { ...r, scope: 'name' }, BEACON_DEST_LIMIT);
+    geo.enrich(res.dests);
+    return res;
   });
 
   /**
@@ -402,7 +439,62 @@ export function historyRoutes(app: FastifyInstance, deps: { clickhouse: ClickHou
     ]);
     const ms = Math.round(performance.now() - t0);
     if (ms > NEW_DESTS_SLOW_MS) req.log.warn({ ms }, 'new-dests: the flows_1m scans took over 1 s; time for the dest_first_seen table (plans/17, phase 2)');
-    return buildNewDests(rows, hours, o, first[0] ? Number(first[0].first) * 1000 : null);
+    const res = buildNewDests(rows, hours, o, first[0] ? Number(first[0].first) * 1000 : null);
+    geo.enrich(res.dests);
+    return res;
+  });
+
+  /**
+   * 18: per-IP sums over the range (the GEO_IP_LIMIT largest by `dir`) and the
+   * totals, grouped here by the geo table. Shared by /asn and /countries.
+   */
+  const geoBreakdown = async (q: Record<string, string | undefined>, reply: FastifyReply, log: FastifyBaseLogger) => {
+    const r = parseRange(q);
+    const dir = parseGeoDir(q.dir);
+    const { perIp, totals } = ipTotalsQueries(r, dir, parseFilters(q));
+    const gone = clientGone(reply);
+    const [ipRows, totalRows] = await Promise.all([
+      chQuery<IpTotalRow>(ch, log, perIp.sql, perIp.params, gone),
+      chQuery<TotalsRow>(ch, log, totals.sql, totals.params, gone),
+    ]);
+    return buildGeoBreakdown(ipRows, totalRows[0], { r, dir, lookup: lookup() });
+  };
+
+  /**
+   * Bytes per ASN (18), largest first by `dir` (total, tx or rx), from the
+   * GEO_IP_LIMIT largest IPs (`coverage` says how much of the traffic they
+   * carry). Local addresses and public ones the geo table does not know are
+   * summed apart. Without a geo table `geo` is false and `rows` empty. The
+   * page's filters apply.
+   */
+  app.get<RangeQuery>('/api/history/asn', async (req, reply): Promise<AsnResponse> => {
+    const b = await geoBreakdown(req.query, reply, req.log);
+    return { ...b.base, rows: b.asns };
+  });
+
+  /** Bytes per country (18), like /asn: the country of each address range's registration. */
+  app.get<RangeQuery>('/api/history/countries', async (req, reply): Promise<CountriesResponse> => {
+    const b = await geoBreakdown(req.query, reply, req.log);
+    return { ...b.base, rows: b.countries };
+  });
+
+  /**
+   * The destination table (18): per (ip, port), bytes, the main app and
+   * proto, the process instances and their names, with ASN and country. The
+   * GEO_IP_LIMIT largest pairs by `dir` are examined; `asn`, `cc` or
+   * `scope=public|local|unmatched` narrow them (`matched`), and `limit`
+   * 1..2000 (default 200) cuts the answer. The page's filters apply.
+   */
+  app.get<RangeQuery>('/api/history/destinations', async (req, reply): Promise<DestinationsResponse> => {
+    const r = parseRange(req.query);
+    const dir = parseGeoDir(req.query.dir);
+    const sel = parseDestSelection(req.query);
+    const limit = intInRange(req.query.limit, 'limit', DEST_TABLE_LIMIT_DEFAULT, 1, DEST_TABLE_LIMIT_MAX);
+    const { sql, params } = destinationsQuery(r, dir, parseFilters(req.query), GEO_IP_LIMIT + 1);
+    const rows = await chQuery<DestQueryRow>(ch, req.log, sql, params, clientGone(reply));
+    const truncated = rows.length > GEO_IP_LIMIT;
+    const out = buildDestinations(truncated ? rows.slice(0, GEO_IP_LIMIT) : rows, sel, lookup(), limit);
+    return { from: r.from, to: r.to, table: r.table, dir, geo: geo.loaded, rdns: deps.rdns.enabled, ...out, truncated };
   });
 
   /**

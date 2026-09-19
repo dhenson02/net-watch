@@ -6,6 +6,7 @@ import { buildProcessCalls, processCallsQuery, rawRange, type ProcessCallsRow } 
 import { chQuery, clientGone } from '../ch/query.ts';
 import { parseRange } from '../ch/range.ts';
 import type { ClickHouseClient } from '../db/clickhouse.ts';
+import type { GeoDb } from '../geo/asn.ts';
 import { badRequest, HttpError } from '../http-error.ts';
 
 const U64_MAX = 2n ** 64n - 1n;
@@ -21,7 +22,7 @@ function parseId(params: { pid: string; start: string }): { pid: number; start: 
   return { pid: Number(pid), start: BigInt(start).toString() };
 }
 
-export function processRoutes(app: FastifyInstance, deps: { clickhouse: ClickHouseClient }) {
+export function processRoutes(app: FastifyInstance, deps: { clickhouse: ClickHouseClient; geo: GeoDb }) {
   const ch = deps.clickhouse;
 
   /** One process instance; the Process page header. */
@@ -123,6 +124,8 @@ export function processRoutes(app: FastifyInstance, deps: { clickhouse: ClickHou
     const r = capSpan(base, BEACON_MAX_SPAN_MS.instance);
     const { sql, params } = beaconsQuery({ scope: 'instance', ...id, from: r.from, to: r.to, limit: BEACON_DEST_LIMIT + 1 });
     const rows = await chQuery<BeaconRow>(ch, req.log, sql, params, clientGone(reply));
-    return buildBeacons(rows, { ...r, scope: 'instance' }, BEACON_DEST_LIMIT);
+    const res = buildBeacons(rows, { ...r, scope: 'instance' }, BEACON_DEST_LIMIT);
+    deps.geo.enrich(res.dests);
+    return res;
   });
 }

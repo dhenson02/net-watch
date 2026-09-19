@@ -4,12 +4,15 @@ import fastifyStatic from '@fastify/static';
 import { config } from './config.ts';
 import { createClickHouse } from './db/clickhouse.ts';
 import { createRedis } from './db/redis.ts';
+import { GeoDb } from './geo/asn.ts';
+import { Rdns } from './geo/rdns.ts';
 import { HttpError } from './http-error.ts';
 import { LiveHub } from './live/hub.ts';
 import { healthRoutes } from './routes/health.ts';
 import { historyRoutes } from './routes/history.ts';
 import { liveRoutes } from './routes/live.ts';
 import { processRoutes } from './routes/process.ts';
+import { rdnsRoutes } from './routes/rdns.ts';
 import { Users } from './users.ts';
 
 const app = Fastify({ logger: { level: config.logLevel } });
@@ -20,9 +23,14 @@ const hub = new LiveHub(redis, app.log, config.liveBackfill);
 hub.start();
 const users = new Users(app.log);
 await users.start();
+// Loads in the background; the API serves without enrichment until it is ready.
+const geo = new GeoDb(config.geoipFile, app.log);
+void geo.start();
+const rdns = new Rdns(config.rdns);
 app.addHook('onClose', async () => {
   await hub.stop();
   users.stop();
+  geo.stop();
   redis.destroy();
   await clickhouse.close();
 });
@@ -36,11 +44,12 @@ app.setErrorHandler((err: Error & { statusCode?: number }, req, reply) => {
   return reply.code(status).send({ error: expose ? err.message : 'internal error' });
 });
 
-const deps = { redis, clickhouse, hub, users };
+const deps = { redis, clickhouse, hub, users, geo, rdns };
 healthRoutes(app, deps);
 liveRoutes(app, deps);
 historyRoutes(app, deps);
 processRoutes(app, deps);
+rdnsRoutes(app, deps);
 
 const serveClient = existsSync(`${config.clientDir}/index.html`);
 if (serveClient) {

@@ -1,0 +1,23 @@
+0.0.0.0	0.255.255.255	0	None	Not routed
+1.1.1.0	1.1.1.255	13335	US	CLOUDFLARENET - Cloudflare, Inc.
+3.160.0.0	3.175.255.255	16509	US	AMAZON-02 - Amazon.com, Inc.
+10.0.0.0	10.255.255.255	0	None	Not routed
+35.190.0.0	35.190.63.255	15169	US	GOOGLE - Google LLC
+44.192.0.0	44.255.255.255	14618	US	AMAZON-AES - Amazon.com, Inc.
+93.184.216.0	93.184.216.255	15133	US	EDGECAST - Edgecast Inc.
+140.82.112.0	140.82.127.255	36459	US	GITHUB - GitHub, Inc.
+160.79.104.0	160.79.104.255	399358	US	ANTHROPIC - Anthropic, PBC
+162.125.0.0	162.125.255.255	19679	US	DROPBOX - Dropbox, Inc.
+162.254.192.0	162.254.199.255	32590	NL	VALVE-CORPORATION - Valve Corporation
+192.168.0.0	192.168.255.255	0	None	Not routed
+2001:4860::	2001:4860:ffff:ffff:ffff:ffff:ffff:ffff	15169	US	GOOGLE - Google LLC
+2600:1700::	2600:1700:ffff:ffff:ffff:ffff:ffff:ffff	7018	US	ATT-INTERNET4 - AT&T Services, Inc.
+2600:1901::	2600:1901:ffff:ffff:ffff:ffff:ffff:ffff	396982	US	GOOGLE-CLOUD-PLATFORM - Google LLC
+2606:4700::	2606:4700:ffff:ffff:ffff:ffff:ffff:ffff	13335	US	CLOUDFLARENET - Cloudflare, Inc.
+2607:6bc0::	2607:6bc0:ffff:ffff:ffff:ffff:ffff:ffff	399358	US	ANTHROPIC - Anthropic, PBC
+2607:f8b0::	2607:f8b0:ffff:ffff:ffff:ffff:ffff:ffff	15169	US	GOOGLE - Google LLC
+2620:100:6000::	2620:100:60ff:ffff:ffff:ffff:ffff:ffff	19679	US	DROPBOX - Dropbox, Inc.
+2a02:6ea0::	2a02:6ea0:ffff:ffff:ffff:ffff:ffff:ffff	60068	GB	CDN77 - Datacamp Limited
+2a04:4e42::	2a04:4e42:ffff:ffff:ffff:ffff:ffff:ffff	54113	US	FASTLY - Fastly, Inc.
+2a06:98c1::	2a06:98c1:ffff:ffff:ffff:ffff:ffff:ffff	209242	DE	CLOUDFLARESPECTRUM Cloudflare
+2803:f800::	2803:f800:ffff:ffff:ffff:ffff:ffff:ffff	13335	BR	CLOUDFLARENET - Cloudflare, Inc.

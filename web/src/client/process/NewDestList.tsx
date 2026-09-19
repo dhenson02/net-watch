@@ -6,6 +6,7 @@ import { Panel } from '../components/Panel.tsx';
 import { hiddenText, parseNewDestOptions } from '../history/newDests.ts';
 import { NewDestToggles } from '../history/NewDestTrack.tsx';
 import { processPath } from '../history/clusterMarkers.ts';
+import { asnLabel } from '../destinations/geoView.ts';
 import { useQuery } from '../hooks/useQuery.ts';
 import { Link, setSearchParams, useSearch } from '../router.ts';
 import { BEACON_FOCUS_PARAM, BEACON_SCOPE_PARAM, BEACONS_PANEL_ID, historyHref } from './beaconStrip.ts';
@@ -77,6 +78,11 @@ export function NewDestList({ p, week }: { p: ProcessInfo; week: TimeRange }) {
                       >
                         <code>{r.dest}</code>
                       </Link>
+                      {r.geo && (
+                        <span className="muted dest-org" title={`AS${r.geo.asn} ${r.geo.org}${r.geo.cc ? ` · ${r.geo.cc}` : ''}`}>
+                          {asnLabel(r.geo)}
+                        </span>
+                      )}
                       {r.loopback && <span className="badge badge-muted">loopback</span>}
                       {r.warmup && <span className="badge badge-muted">first day</span>}
                     </td>
