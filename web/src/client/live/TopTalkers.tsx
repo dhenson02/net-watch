@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type MouseEvent } from 'react';
+import { memo, useDeferredValue, useEffect, useMemo, useState, type MouseEvent } from 'react';
 import type { LiveProcessRow } from '../../shared/api.ts';
 import { fmtBytes, fmtDuration, fmtRate } from '../charts/format.ts';
 import { RX, TX } from '../charts/palette.ts';
@@ -24,6 +24,7 @@ import {
   userLabel,
   type Sort,
   type SortKey,
+  type Spark,
 } from './topTalkers.ts';
 import { useSnapshot } from './useSnapshot.ts';
 
@@ -58,6 +59,57 @@ function RateCell({ kbps, max, color }: { kbps: number; max: number; color: stri
   );
 }
 
+function onRowClick(e: MouseEvent<HTMLTableRowElement>, r: LiveProcessRow) {
+  // The name link handles its own clicks (including middle and ctrl/cmd clicks).
+  if ((e.target as Element).closest('a, button, input')) return;
+  // Selecting text (to copy a cmdline) is not a click on the row.
+  if (getSelection()?.toString()) return;
+  if (e.metaKey || e.ctrlKey) window.open(processHref(r), '_blank', 'noopener');
+  else navigate(processHref(r));
+}
+
+/**
+ * One table row. Memoized: `r` and `spark` keep their identity between
+ * renders that did not change them, so flipping a filter only renders the
+ * rows that appear.
+ */
+const ProcessRow = memo(function ProcessRow({ r, spark, max, scheme, serverNow }: { r: LiveProcessRow; spark: Spark | undefined; max: number; scheme: 'light' | 'dark'; serverNow: number | null }) {
+  const ended = r.endedMs !== null;
+  return (
+    <tr className={ended ? 'tt-ended' : undefined} onClick={(e) => onRowClick(e, r)}>
+      <td className="tt-status">
+        <span className={`dot ${ended ? '' : 'dot-ok'}`} role="img" aria-label={ended ? 'ended' : 'live'} title={ended ? 'ended' : 'live'} />
+      </td>
+      <td className="tt-name">
+        <Link href={processHref(r)} className="tt-proc">
+          {r.name}
+        </Link>
+        <div className="tt-cmd" title={r.cmdline}>
+          {r.cmdline || ' '}
+        </div>
+      </td>
+      <td className="num tt-pid">
+        {r.pid}
+        <div className="muted" title={`uid ${r.uid}`}>
+          {userLabel(r)}
+        </div>
+      </td>
+      <RateCell kbps={r.txKbps} max={max} color={TX[scheme]} />
+      <RateCell kbps={r.rxKbps} max={max} color={RX[scheme]} />
+      <td className="tt-spark">{spark && spark.tx.length > 0 ? <Sparkline tx={spark.tx} rx={spark.rx} fmt={fmtRate} /> : null}</td>
+      <td className="num tt-num">{r.nFlows}</td>
+      <td className="num tt-num tt-totals">
+        ↑ {fmtBytes(r.txTotal)}
+        <div>↓ {fmtBytes(r.rxTotal)}</div>
+      </td>
+      <td className="num tt-num tt-age">
+        {serverNow === null ? '—' : fmtDuration(Math.max(0, serverNow - r.startMs))}
+        {ended && serverNow !== null && <div className="muted">ended {ago(Math.max(0, serverNow - r.endedMs!))}</div>}
+      </td>
+    </tr>
+  );
+});
+
 /**
  * 02: live processes and those that ended in the last 60 s, with current
  * rates, a 60 s sparkline and lifetime totals. Rows come from the polled
@@ -75,6 +127,9 @@ export function TopTalkers() {
   const hideIdle = idleParam !== 'show';
   const [endedParam, setEndedParam] = useSearchParam('ended', 'show');
   const hideEnded = endedParam === 'hide';
+  // The switch itself updates at once; the table re-filters in a lower-priority render.
+  const deferredHideEnded = useDeferredValue(hideEnded);
+  const deferredHideIdle = useDeferredValue(hideIdle);
   // Every process name seen this session. Append-only, so the list never
   // shifts under the cursor; names survive going idle or ending.
   const [names, setNames] = useState<readonly string[]>([]);
@@ -100,8 +155,8 @@ export function TopTalkers() {
     const all = rows ?? [];
     const named = all.filter((r) => !hiddenNames.has(r.name));
     const matched = named.filter((r) => matchesFilter(r, filter));
-    const current = hideEnded ? matched.filter((r) => r.endedMs === null) : matched;
-    const shown = hideIdle ? current.filter((r) => !isIdle(r, sparks.get(r.id), live.latestTs)) : current;
+    const current = deferredHideEnded ? matched.filter((r) => r.endedMs === null) : matched;
+    const shown = deferredHideIdle ? current.filter((r) => !isIdle(r, sparks.get(r.id), live.latestTs)) : current;
     const sorted = sortRows(shown, sort, sparks);
     const visible = sorted.slice(0, MAX_ROWS);
     let max = 0;
@@ -116,18 +171,9 @@ export function TopTalkers() {
       total: all.length,
       max,
     };
-  }, [rows, filter, hiddenNames, hideIdle, hideEnded, sort.key, sort.desc, sparks, live.latestTs]);
+  }, [rows, filter, hiddenNames, deferredHideIdle, deferredHideEnded, sort.key, sort.desc, sparks, live.latestTs]);
 
   const serverNow = snap.serverNow(now);
-
-  const onRowClick = (e: MouseEvent<HTMLTableRowElement>, r: LiveProcessRow) => {
-    // The name link handles its own clicks (including middle and ctrl/cmd clicks).
-    if ((e.target as Element).closest('a, button, input')) return;
-    // Selecting text (to copy a cmdline) is not a click on the row.
-    if (getSelection()?.toString()) return;
-    if (e.metaKey || e.ctrlKey) window.open(processHref(r), '_blank', 'noopener');
-    else navigate(processHref(r));
-  };
 
   const hiddenParts = [view.byName > 0 && `${view.byName} by name`, view.filtered > 0 && `${view.filtered} not matching “${filter.trim()}”`, view.ended > 0 && `${view.ended} ended`, view.idle > 0 && `${view.idle} idle`].filter(Boolean);
 
@@ -232,48 +278,9 @@ export function TopTalkers() {
                 </tr>
               </thead>
               <tbody>
-                {view.visible.map((r) => {
-                  const ended = r.endedMs !== null;
-                  const spark = sparks.get(r.id);
-                  return (
-                    <tr key={r.id} className={ended ? 'tt-ended' : undefined} onClick={(e) => onRowClick(e, r)}>
-                      <td className="tt-status">
-                        <span
-                          className={`dot ${ended ? '' : 'dot-ok'}`}
-                          role="img"
-                          aria-label={ended ? 'ended' : 'live'}
-                          title={ended ? 'ended' : 'live'}
-                        />
-                      </td>
-                      <td className="tt-name">
-                        <Link href={processHref(r)} className="tt-proc">
-                          {r.name}
-                        </Link>
-                        <div className="tt-cmd" title={r.cmdline}>
-                          {r.cmdline || ' '}
-                        </div>
-                      </td>
-                      <td className="num tt-pid">
-                        {r.pid}
-                        <div className="muted" title={`uid ${r.uid}`}>
-                          {userLabel(r)}
-                        </div>
-                      </td>
-                      <RateCell kbps={r.txKbps} max={view.max} color={TX[scheme]} />
-                      <RateCell kbps={r.rxKbps} max={view.max} color={RX[scheme]} />
-                      <td className="tt-spark">{spark && spark.tx.length > 0 ? <Sparkline tx={spark.tx} rx={spark.rx} fmt={fmtRate} /> : null}</td>
-                      <td className="num tt-num">{r.nFlows}</td>
-                      <td className="num tt-num tt-totals">
-                        ↑ {fmtBytes(r.txTotal)}
-                        <div>↓ {fmtBytes(r.rxTotal)}</div>
-                      </td>
-                      <td className="num tt-num tt-age">
-                        {serverNow === null ? '—' : fmtDuration(Math.max(0, serverNow - r.startMs))}
-                        {ended && serverNow !== null && <div className="muted">ended {ago(Math.max(0, serverNow - r.endedMs!))}</div>}
-                      </td>
-                    </tr>
-                  );
-                })}
+                {view.visible.map((r) => (
+                  <ProcessRow key={r.id} r={r} spark={sparks.get(r.id)} max={view.max} scheme={scheme} serverNow={serverNow} />
+                ))}
               </tbody>
             </table>
             {emptyText && <div className="tt-empty">{emptyText}</div>}
