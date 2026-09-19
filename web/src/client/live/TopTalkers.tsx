@@ -1,4 +1,4 @@
-import { useMemo, type MouseEvent } from 'react';
+import { useEffect, useMemo, useState, type MouseEvent } from 'react';
 import type { LiveProcessRow } from '../../shared/api.ts';
 import { fmtBytes, fmtDuration, fmtRate } from '../charts/format.ts';
 import { RX, TX } from '../charts/palette.ts';
@@ -10,6 +10,7 @@ import { useLive } from '../hooks/useLive.ts';
 import { useNow } from '../hooks/useNow.ts';
 import { Link, navigate, useSearchParam } from '../router.ts';
 import {
+  appendNames,
   buildSparks,
   DEFAULT_SORT,
   formatSort,
@@ -74,15 +75,31 @@ export function TopTalkers() {
   const hideIdle = idleParam !== 'show';
   const [endedParam, setEndedParam] = useSearchParam('ended', 'show');
   const hideEnded = endedParam === 'hide';
+  // Every process name seen this session. Append-only, so the list never
+  // shifts under the cursor; names survive going idle or ending.
+  const [names, setNames] = useState<readonly string[]>([]);
+  // Names the user unchecked. Independent of `names`, so list growth cannot touch it.
+  const [hiddenNames, setHiddenNames] = useState<ReadonlySet<string>>(new Set());
+  const toggleName = (name: string, show: boolean) =>
+    setHiddenNames((prev) => {
+      const next = new Set(prev);
+      if (show) next.delete(name);
+      else next.add(name);
+      return next;
+    });
   const sort = parseSort(sortParam);
   const onSort = (k: SortKey) => setSortParam(formatSort(nextSort(sort, k)), { replace: true });
 
   const rows = snap.data?.processes;
+  useEffect(() => {
+    if (rows) setNames((prev) => appendNames(prev, rows));
+  }, [rows]);
   const sparks = useMemo(() => buildSparks(live.ticks, (rows ?? []).map((r) => r.id)), [live.ticks, rows]);
 
   const view = useMemo(() => {
     const all = rows ?? [];
-    const matched = all.filter((r) => matchesFilter(r, filter));
+    const named = all.filter((r) => !hiddenNames.has(r.name));
+    const matched = named.filter((r) => matchesFilter(r, filter));
     const current = hideEnded ? matched.filter((r) => r.endedMs === null) : matched;
     const shown = hideIdle ? current.filter((r) => !isIdle(r, sparks.get(r.id), live.latestTs)) : current;
     const sorted = sortRows(shown, sort, sparks);
@@ -92,13 +109,14 @@ export function TopTalkers() {
     return {
       visible,
       overflow: sorted.length - visible.length,
-      filtered: all.length - matched.length,
+      byName: all.length - named.length,
+      filtered: named.length - matched.length,
       ended: matched.length - current.length,
       idle: current.length - shown.length,
       total: all.length,
       max,
     };
-  }, [rows, filter, hideIdle, hideEnded, sort.key, sort.desc, sparks, live.latestTs]);
+  }, [rows, filter, hiddenNames, hideIdle, hideEnded, sort.key, sort.desc, sparks, live.latestTs]);
 
   const serverNow = snap.serverNow(now);
 
@@ -111,7 +129,7 @@ export function TopTalkers() {
     else navigate(processHref(r));
   };
 
-  const hiddenParts = [view.filtered > 0 && `${view.filtered} not matching “${filter.trim()}”`, view.ended > 0 && `${view.ended} ended`, view.idle > 0 && `${view.idle} idle`].filter(Boolean);
+  const hiddenParts = [view.byName > 0 && `${view.byName} by name`, view.filtered > 0 && `${view.filtered} not matching “${filter.trim()}”`, view.ended > 0 && `${view.ended} ended`, view.idle > 0 && `${view.idle} idle`].filter(Boolean);
 
   const emptyText = rows && view.visible.length === 0 ? (view.total ? 'No process matches.' : 'No processes in the latest tick.') : null;
 
@@ -137,6 +155,26 @@ export function TopTalkers() {
         checked={hideIdle}
         onChange={(on) => setIdleParam(on ? 'hide' : 'show', { replace: true })}
       />
+      {names.length > 0 && (
+        <fieldset className="tt-names">
+          <legend>
+            Processes
+            <button type="button" className="tt-names-all" onClick={() => setHiddenNames(new Set())} disabled={hiddenNames.size === 0}>
+              show all
+            </button>
+          </legend>
+          <ul>
+            {names.map((n) => (
+              <li key={n}>
+                <label>
+                  <input type="checkbox" checked={!hiddenNames.has(n)} onChange={(e) => toggleName(n, e.target.checked)} />
+                  <span title={n}>{n}</span>
+                </label>
+              </li>
+            ))}
+          </ul>
+        </fieldset>
+      )}
     </aside>
   );
 

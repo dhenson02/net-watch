@@ -74,7 +74,26 @@ export function matchesFilter(row: LiveProcessRow, filter: string): boolean {
   return !f || row.name.toLowerCase().includes(f) || row.cmdline.toLowerCase().includes(f);
 }
 
-export const SORT_KEYS = ['rate', 'name', 'pid', 'user', 'tx', 'rx', 'spark', 'flows', 'txTotal', 'rxTotal', 'age'] as const;
+/**
+ * Append process names not yet in `known`, in order of first appearance (new
+ * names sorted among themselves). Never removes or reorders existing entries,
+ * and returns `known` itself when nothing is new so React can skip the update.
+ */
+export function appendNames(known: readonly string[], rows: readonly LiveProcessRow[]): readonly string[] {
+  const have = new Set(known);
+  const fresh: string[] = [];
+  for (const r of rows) {
+    if (r.name && !have.has(r.name)) {
+      have.add(r.name);
+      fresh.push(r.name);
+    }
+  }
+  if (fresh.length === 0) return known;
+  fresh.sort((a, b) => a.localeCompare(b));
+  return [...known, ...fresh];
+}
+
+export const SORT_KEYS =['rate', 'name', 'pid', 'user', 'tx', 'rx', 'spark', 'flows', 'txTotal', 'rxTotal', 'age'] as const;
 export type SortKey = (typeof SORT_KEYS)[number];
 export interface Sort {
   key: SortKey;

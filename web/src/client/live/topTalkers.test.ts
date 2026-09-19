@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { CompactTick, LiveProcessRow } from '../../shared/api.ts';
-import { buildSparks, isIdle, matchesFilter, nextSort, parseSort, sortRows, type Spark } from './topTalkers.ts';
+import { appendNames, buildSparks, isIdle, matchesFilter, nextSort, parseSort, sortRows, type Spark } from './topTalkers.ts';
 
 function tick(ts: number, procs: [id: string, tx: number, rx: number][], gap = false): CompactTick {
   return {
@@ -94,4 +94,11 @@ test('sorts by rate, text and age; ties keep id order; shared pids stay separate
   assert.deepEqual(ids(sortRows(rows, parseSort('name'), none)), ['7:100', '7:200', '9:1']); // b == B: by id
   assert.deepEqual(ids(sortRows(rows, parseSort('-age'), none)), ['7:100', '7:200', '9:1']); // oldest first
   assert.deepEqual(ids(sortRows(rows, parseSort('age'), none)), ['9:1', '7:200', '7:100']);
+});
+
+test('appendNames only appends new names and keeps existing order', () => {
+  const known = ['zed', 'abc'];
+  assert.equal(appendNames(known, [row('1:1', { name: 'abc' })]), known);
+  const next = appendNames(known, [row('2:1', { name: 'mid' }), row('3:1', { name: 'abc' }), row('4:1', { name: 'aaa' })]);
+  assert.deepEqual(next, ['zed', 'abc', 'aaa', 'mid']);
 });
