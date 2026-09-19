@@ -2,7 +2,8 @@
 // "First ever" needs the whole history, so both queries scan all of
 // `flows_1m` (up to 2 years). That is fine while the table is small; the
 // route logs a warning once a request takes longer than NEW_DESTS_SLOW_MS
-// (time for phase 2, a `dest_first_seen` table; see plans/17).
+// (time for phase 2, a `dest_first_seen` table; its design is in
+// `git show 5342a2b:plans/17-new-destinations.md`).
 import type { NewDest, NewDestsResponse } from '../../shared/api.ts';
 import { destText } from './beacons.ts';
 import { DISPLAY_IP } from './sql.ts';

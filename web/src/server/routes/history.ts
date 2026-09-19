@@ -438,7 +438,7 @@ export function historyRoutes(app: FastifyInstance, deps: { clickhouse: ClickHou
       chQuery<{ first: number }>(ch, req.log, FIRST_MINUTE_SQL, {}, gone),
     ]);
     const ms = Math.round(performance.now() - t0);
-    if (ms > NEW_DESTS_SLOW_MS) req.log.warn({ ms }, 'new-dests: the flows_1m scans took over 1 s; time for the dest_first_seen table (plans/17, phase 2)');
+    if (ms > NEW_DESTS_SLOW_MS) req.log.warn({ ms }, 'new-dests: the flows_1m scans took over 1 s; time for the dest_first_seen table (phase 2: git show 5342a2b:plans/17-new-destinations.md)');
     const res = buildNewDests(rows, hours, o, first[0] ? Number(first[0].first) * 1000 : null);
     geo.enrich(res.dests);
     return res;

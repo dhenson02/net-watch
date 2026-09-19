@@ -1,5 +1,5 @@
 // Downloads the iptoasn.com IP → ASN table (public domain) for the
-// Destinations page (plans/18). Run it deliberately: `npm run geo:update`.
+// Destinations page (plan 18). Run it deliberately: `npm run geo:update`.
 // The server never downloads anything; it reads the file at GEOIP_FILE
 // (default data/ip2asn-combined.tsv.gz under web/) and reloads it within
 // 10 minutes of a change.

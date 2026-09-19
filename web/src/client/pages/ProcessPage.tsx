@@ -15,7 +15,7 @@ export const PROCESS_WINDOW_MS = 7 * 86_400_000;
 
 /**
  * One process instance, identified by pid and start_ns (a u64, kept as a
- * string). Layout (plans/README): the header panel, then one wide panel per
+ * string). Layout: the header panel, then one wide panel per
  * section, in this order: 09 instances of the same name, 14 bytes vs calls,
  * 10 bytes per call, 15 beaconing, 17 new destinations, destination table.
  * Sections take the loaded `ProcessInfo` and render nothing until it arrives.
