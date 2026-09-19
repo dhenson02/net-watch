@@ -2,7 +2,7 @@
 // never from 'echarts' itself, so the bundle only carries what is listed.
 // A chart that needs another series type or component adds it below.
 import * as echarts from 'echarts/core';
-import { BarChart, HeatmapChart, LineChart, SankeyChart, ScatterChart, SunburstChart, TreemapChart } from 'echarts/charts';
+import { BarChart, CustomChart, HeatmapChart, LineChart, SankeyChart, ScatterChart, SunburstChart, TreemapChart } from 'echarts/charts';
 import {
   AriaComponent,
   BrushComponent,
@@ -30,6 +30,8 @@ echarts.use([
   // History's uid → process → app treemap (07) and its sunburst view.
   TreemapChart,
   SunburstChart,
+  // The process lifetime Gantt (09): one rect per instance from a renderItem.
+  CustomChart,
   AriaComponent,
   BrushComponent,
   DataZoomComponent,

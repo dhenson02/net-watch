@@ -10,6 +10,7 @@ import { parseEventsMode, type EventsMode } from '../history/clusterMarkers.ts';
 import { ActivityHeatmap } from '../history/ActivityHeatmap.tsx';
 import { BandwidthTreemap } from '../history/BandwidthTreemap.tsx';
 import { LifecycleTrack } from '../history/LifecycleTrack.tsx';
+import { ProcessGantt } from '../history/ProcessGantt.tsx';
 import { ThroughputChart } from '../history/ThroughputChart.tsx';
 import { TxRxScatter } from '../history/TxRxScatter.tsx';
 import { UnknownShareTrack } from '../history/UnknownShareTrack.tsx';
@@ -74,7 +75,7 @@ export function HistoryPage() {
               clear all
             </button>
           )}
-          <span className="muted">applies to the totals, the throughput chart, the activity heatmap, the bandwidth treemap, the sent/received scatter and the flow diagram</span>
+          <span className="muted">applies to the totals, the throughput chart, the activity heatmap, the bandwidth treemap, the sent/received scatter, the flow diagram and (process and uid only) the process lifetimes</span>
         </p>
       )}
       <div className="panels">
@@ -139,6 +140,9 @@ export function HistoryPage() {
         <BandwidthTreemap range={range} filters={filters} />
 
         <TxRxScatter range={range} filters={filters} slots={slots} />
+
+        {/* Process lifetimes read `processes`, which has only the name and uid of the filters. */}
+        <ProcessGantt range={range} name={filters.name} uid={filters.uid} />
 
         <HistoryFlowSankey range={range} filters={filters} slots={slots} />
       </div>

@@ -44,6 +44,9 @@ export const urls = {
   // 07: `dir` total (default) | tx | rx.
   historyTreemap: (r: TimeRange, p: { dir: string; filters: UrlFilters }) =>
     `/api/history/treemap?${qs({ from: r.from, to: r.to, dir: p.dir === 'total' ? undefined : p.dir, ...p.filters })}`,
+  // 09: `name`/`uid` narrow it (exact); the server caps it at `limit` (default 500).
+  historyLifetimes: (r: TimeRange, p: { name?: string; uid?: string; limit?: number } = {}) =>
+    `/api/history/lifetimes?${qs({ from: r.from, to: r.to, name: p.name, uid: p.uid, limit: p.limit })}`,
   historyScatter: (r: TimeRange, p: { group: string; basis: string; filters: UrlFilters }) =>
     `/api/history/scatter?${qs({ from: r.from, to: r.to, group: p.group, basis: p.basis, ...p.filters })}`,
 };

@@ -381,6 +381,43 @@ export interface ScatterResponse {
 }
 
 // ---------------------------------------------------------------------------
+// Process lifetimes (09, the Gantt on the History and Process pages)
+
+/** One process instance's lifetime. */
+export interface LifetimeBar {
+  /** `pid:start_ns`, for the process page. */
+  id: string;
+  pid: number;
+  name: string;
+  /** The start of the command line (at most 120 chars). */
+  cmdline: string;
+  uid: number;
+  /** Process start (exec), ms. */
+  startMs: number;
+  /** First network I/O, ms; the bar is thin (hatched) from `startMs` to here. */
+  firstSeenMs: number;
+  /** Last network I/O, ms. */
+  lastSeenMs: number;
+  /** End, ms; null while running (or since the collector stopped). */
+  endedMs: number | null;
+  /** Lifetime totals. */
+  tx: number;
+  rx: number;
+}
+
+/**
+ * `/api/history/lifetimes`: process instances whose lifetime overlaps the
+ * range (started before `to`, not ended before `from`), latest start first.
+ */
+export interface LifetimesResponse {
+  from: number;
+  to: number;
+  bars: LifetimeBar[];
+  /** More instances matched than `limit`; the earliest starts were left out. */
+  truncated: boolean;
+}
+
+// ---------------------------------------------------------------------------
 // Hour-of-day × weekday heatmap (06)
 
 /** Bytes the cells count: tx + rx, sent or received. */

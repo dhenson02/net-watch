@@ -7,12 +7,14 @@ import {
   type HeatmapResponse,
   type HistorySummary,
   type LifecycleResponse,
+  type LifetimesResponse,
   type ScatterResponse,
   type ThroughputResponse,
   type TreemapResponse,
 } from '../../shared/api.ts';
 import { buildHeatmap, heatmapQuery, parseHeatRange, parseMetric, parseSplit, sampleCounts, type HeatmapRow } from '../ch/heatmap.ts';
 import { LIFECYCLE_LIMIT_DEFAULT, LIFECYCLE_LIMIT_MAX, lifecycleQuery, parseNames, toLifecycleProc, type LifecycleRow } from '../ch/lifecycle.ts';
+import { LIFETIMES_LIMIT_DEFAULT, LIFETIMES_LIMIT_MAX, lifetimesQuery, toLifetimeBar, type LifetimeRow } from '../ch/lifetimes.ts';
 import { chQuery, clientGone } from '../ch/query.ts';
 import { parseRange, rangeInfo, rangeParams, timeFilter } from '../ch/range.ts';
 import {
@@ -182,6 +184,20 @@ export function historyRoutes(app: FastifyInstance, deps: { clickhouse: ClickHou
     const { sql, params } = lifecycleQuery({ from, to, limit: limit + 1, names, uid });
     const rows = await chQuery<LifecycleRow>(ch, req.log, sql, params, clientGone(reply));
     return { from, to, procs: rows.slice(0, limit).map(toLifecycleProc), truncated: rows.length > limit };
+  });
+
+  /**
+   * Process lifetimes (09): instances whose lifetime overlaps the range, latest
+   * start first; the Gantt on the History and Process pages. Optional `name`
+   * and `uid` (exact) narrow it; `limit` 1..2000 (default 500).
+   */
+  app.get<RangeQuery>('/api/history/lifetimes', async (req, reply): Promise<LifetimesResponse> => {
+    const { from, to } = parseRange(req.query);
+    const limit = intInRange(req.query.limit, 'limit', LIFETIMES_LIMIT_DEFAULT, 1, LIFETIMES_LIMIT_MAX);
+    const { name, uid } = parseFilters({ name: req.query.name, uid: req.query.uid });
+    const { sql, params } = lifetimesQuery({ from, to, limit: limit + 1, name, uid });
+    const rows = await chQuery<LifetimeRow>(ch, req.log, sql, params, clientGone(reply));
+    return { from, to, bars: rows.slice(0, limit).map(toLifetimeBar), truncated: rows.length > limit };
   });
 
   /**

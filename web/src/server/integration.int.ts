@@ -13,6 +13,7 @@ import type {
   HistoryIngest,
   HistorySummary,
   LifecycleResponse,
+  LifetimesResponse,
   LiveFlowsResponse,
   LiveMeta,
   LiveSnapshotResponse,
@@ -359,6 +360,64 @@ test('history lifecycle: processes whose first I/O or end is in range, largest f
 
   for (const q of ['limit=0', 'limit=1001', 'uid=x', `names=${Array.from({ length: 51 }, (_, i) => i).join(',')}`, 'from=5&to=4']) {
     assert.equal((await get(`/api/history/lifecycle?${q}`)).status, 400, q);
+  }
+});
+
+test('history lifetimes: instances overlapping the range, latest start first, name/uid filters, cap', async () => {
+  const now = Date.now();
+  const from = now - 7 * 86_400_000;
+  const range = `from=${from}&to=${now}`;
+  const all = await get<LifetimesResponse>(`/api/history/lifetimes?${range}`);
+  assert.equal(all.status, 200);
+  assert.equal(all.body.from, from);
+  assert.equal(typeof all.body.truncated, 'boolean');
+  assert.ok(all.body.bars.length <= 500);
+  const ids = new Set<string>();
+  for (const b of all.body.bars) {
+    assert.match(b.id, /^\d+:\d+$/);
+    assert.equal(b.id.split(':')[0], String(b.pid));
+    assert.ok(!ids.has(b.id), `one row per instance: ${b.id}`);
+    ids.add(b.id);
+    assert.ok(b.cmdline.length <= 120);
+    assert.ok(Number.isFinite(b.tx) && Number.isFinite(b.rx) && b.tx >= 0 && b.rx >= 0);
+    // Overlaps the range; first I/O never before the start.
+    assert.ok(b.startMs < now, b.id);
+    assert.ok(b.endedMs === null || b.endedMs >= from, b.id);
+    assert.ok(b.firstSeenMs >= b.startMs, b.id);
+  }
+  for (let i = 1; i < all.body.bars.length; i++) assert.ok(all.body.bars[i - 1]!.startMs >= all.body.bars[i]!.startMs, 'latest start first');
+
+  const first = all.body.bars[0];
+  if (first) {
+    // The id opens the process page, which agrees on the times.
+    const [pid, start] = first.id.split(':');
+    const proc = await get<ProcessInfo>(`/api/process/${pid}/${start}`);
+    assert.equal(proc.status, 200);
+    assert.equal(proc.body.start_ms, first.startMs);
+    assert.equal(proc.body.ended_ms, first.endedMs);
+    const named = await get<LifetimesResponse>(`/api/history/lifetimes?${range}&name=${encodeURIComponent(first.name)}`);
+    assert.ok(named.body.bars.some((b) => b.id === first.id));
+    for (const b of named.body.bars) assert.equal(b.name, first.name);
+    const byUid = await get<LifetimesResponse>(`/api/history/lifetimes?${range}&uid=${first.uid}`);
+    assert.ok(byUid.body.bars.length > 0);
+    for (const b of byUid.body.bars) assert.equal(b.uid, first.uid);
+    const one = await get<LifetimesResponse>(`/api/history/lifetimes?${range}&limit=1`);
+    assert.deepEqual(
+      one.body.bars.map((b) => b.id),
+      [first.id],
+    );
+    assert.equal(one.body.truncated, all.body.bars.length > 1);
+    // A range that ends before the instance started leaves it out.
+    const before = await get<LifetimesResponse>(`/api/history/lifetimes?from=${first.startMs - 60_000}&to=${first.startMs}&name=${encodeURIComponent(first.name)}`);
+    assert.ok(!before.body.bars.some((b) => b.id === first.id));
+  }
+  const none = await get<LifetimesResponse>(`/api/history/lifetimes?${range}&name=no-such-proc`);
+  assert.deepEqual(none.body.bars, []);
+  const empty = await get<LifetimesResponse>(`/api/history/lifetimes?from=1000&to=2000`);
+  assert.deepEqual(empty.body.bars, []);
+
+  for (const q of ['limit=0', 'limit=2001', 'uid=x', `name=${'x'.repeat(300)}`, 'from=5&to=4']) {
+    assert.equal((await get(`/api/history/lifetimes?${q}`)).status, 400, q);
   }
 });
 
