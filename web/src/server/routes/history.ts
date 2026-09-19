@@ -1,13 +1,16 @@
 import type { FastifyInstance } from 'fastify';
 import {
   COMPARE_OFFSET_MS,
+  HEATMAP_CELLS,
   type HistoryFlowsResponse,
   type HistoryIngest,
+  type HeatmapResponse,
   type HistorySummary,
   type LifecycleResponse,
   type ScatterResponse,
   type ThroughputResponse,
 } from '../../shared/api.ts';
+import { buildHeatmap, heatmapQuery, parseHeatRange, parseMetric, parseSplit, sampleCounts, type HeatmapRow } from '../ch/heatmap.ts';
 import { LIFECYCLE_LIMIT_DEFAULT, LIFECYCLE_LIMIT_MAX, lifecycleQuery, parseNames, toLifecycleProc, type LifecycleRow } from '../ch/lifecycle.ts';
 import { chQuery, clientGone } from '../ch/query.ts';
 import { parseRange, rangeInfo, rangeParams, timeFilter } from '../ch/range.ts';
@@ -37,6 +40,7 @@ import {
   type ThroughputRow,
   type UnknownRow,
 } from '../ch/throughput.ts';
+import { parseTz } from '../ch/tz.ts';
 import type { ClickHouseClient } from '../db/clickhouse.ts';
 import { badRequest } from '../http-error.ts';
 import type { Users } from '../users.ts';
@@ -201,6 +205,33 @@ export function historyRoutes(app: FastifyInstance, deps: { clickhouse: ClickHou
       points: rows.slice(0, limit).map((r) => toScatterPoint(r, (uid) => users.name(uid))),
       truncated: rows.length > limit,
     };
+  });
+
+  /**
+   * Hour-of-day × weekday heatmap (06): average kbps per (weekday, hour) in
+   * `tz` over the range (default: the last 28 days), from `flows_1m`. A cell
+   * is its bytes divided by how often that weekday-hour occurs in the part of
+   * the range the rollup covers (counted here, not from the data, so an hour
+   * without traffic still counts). `metric=total|tx|rx`; `split=app` gives
+   * one grid per top-4 app. The page's filters apply.
+   */
+  app.get<RangeQuery>('/api/history/heatmap', async (req, reply): Promise<HeatmapResponse> => {
+    const { from, to } = parseHeatRange(req.query);
+    const metric = parseMetric(req.query.metric);
+    const split = parseSplit(req.query.split);
+    const filters = parseFilters(req.query);
+    const tz = await parseTz(ch, req.log, req.query.tz);
+    const gone = clientGone(reply);
+    const { sql, params } = heatmapQuery({ from, to, tz, metric, split, filters });
+    const [rows, first] = await Promise.all([
+      chQuery<HeatmapRow>(ch, req.log, sql, params, gone),
+      chQuery<{ first: number }>(ch, req.log, FIRST_MINUTE_SQL, {}, gone),
+    ]);
+    const firstMs = first[0] ? Number(first[0].first) * 1000 : null;
+    const coveredFrom = firstMs === null ? null : Math.max(from, firstMs);
+    const start = coveredFrom ?? from;
+    const samples = start < to ? sampleCounts(start, to, tz) : new Array<number>(HEATMAP_CELLS).fill(0);
+    return buildHeatmap(rows, { from, to, tz, metric, split, coveredFrom }, samples);
   });
 
   /**

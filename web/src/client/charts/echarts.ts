@@ -2,7 +2,7 @@
 // never from 'echarts' itself, so the bundle only carries what is listed.
 // A chart that needs another series type or component adds it below.
 import * as echarts from 'echarts/core';
-import { BarChart, LineChart, SankeyChart, ScatterChart } from 'echarts/charts';
+import { BarChart, HeatmapChart, LineChart, SankeyChart, ScatterChart } from 'echarts/charts';
 import {
   AriaComponent,
   BrushComponent,
@@ -14,6 +14,7 @@ import {
   MarkLineComponent,
   ToolboxComponent,
   TooltipComponent,
+  VisualMapContinuousComponent,
 } from 'echarts/components';
 import { CanvasRenderer } from 'echarts/renderers';
 
@@ -23,6 +24,9 @@ echarts.use([
   SankeyChart,
   // History's process start/end marker track (12).
   ScatterChart,
+  // History's hour × weekday heatmap (06), colored by a continuous visualMap.
+  HeatmapChart,
+  VisualMapContinuousComponent,
   AriaComponent,
   BrushComponent,
   DataZoomComponent,

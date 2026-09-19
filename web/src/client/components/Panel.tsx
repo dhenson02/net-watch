@@ -15,10 +15,12 @@ type Props = {
   /** Take the full row of the panel grid. */
   wide?: boolean;
   children?: ReactNode;
+  /** Element id, e.g. a scroll target. */
+  id?: string;
 };
 
 /** A titled card with loading, error and empty states. */
-export function Panel({ title, subtitle, actions, footnote = PAYLOAD_NOTE, loading, error, empty, wide, children }: Props) {
+export function Panel({ title, subtitle, actions, footnote = PAYLOAD_NOTE, loading, error, empty, wide, children, id }: Props) {
   let body = children;
   if (error) {
     body = (
@@ -31,7 +33,7 @@ export function Panel({ title, subtitle, actions, footnote = PAYLOAD_NOTE, loadi
   }
 
   return (
-    <section className={`panel${wide ? ' panel-wide' : ''}`} aria-busy={loading || undefined}>
+    <section id={id} className={`panel${wide ? ' panel-wide' : ''}`} aria-busy={loading || undefined}>
       <header className="panel-head">
         <div>
           <h2 className="panel-title">{title}</h2>

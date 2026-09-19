@@ -7,6 +7,7 @@ import { RangePicker } from '../components/RangePicker.tsx';
 import { useEChartRef } from '../charts/EChart.tsx';
 import { SegmentedControl } from '../components/SegmentedControl.tsx';
 import { parseEventsMode, type EventsMode } from '../history/clusterMarkers.ts';
+import { ActivityHeatmap } from '../history/ActivityHeatmap.tsx';
 import { LifecycleTrack } from '../history/LifecycleTrack.tsx';
 import { ThroughputChart } from '../history/ThroughputChart.tsx';
 import { TxRxScatter } from '../history/TxRxScatter.tsx';
@@ -72,7 +73,7 @@ export function HistoryPage() {
               clear all
             </button>
           )}
-          <span className="muted">applies to the totals, the throughput chart, the sent/received scatter and the flow diagram</span>
+          <span className="muted">applies to the totals, the throughput chart, the activity heatmap, the sent/received scatter and the flow diagram</span>
         </p>
       )}
       <div className="panels">
@@ -131,6 +132,8 @@ export function HistoryPage() {
             </>
           )}
         />
+
+        <ActivityHeatmap filters={filters} />
 
         <TxRxScatter range={range} filters={filters} slots={slots} />
 

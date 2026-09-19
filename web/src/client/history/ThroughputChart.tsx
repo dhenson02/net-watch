@@ -23,6 +23,9 @@ import { COMPARE_NOUN, deviationRuns, GHOST_ID, ghostAt, ghostSeries, ghostText,
 import { bandColors, buildSeries, drillDown, TOP_DEFAULT, type HistorySeries } from './throughputSeries.ts';
 import { useThroughput, useThroughputParams } from './useThroughput.ts';
 
+/** The throughput panel's element id: other panels scroll to it after setting the range (06). */
+export const THROUGHPUT_PANEL_ID = 'throughput';
+
 const BY_OPTIONS = [
   { value: 'app', label: 'app', title: 'Application protocol (HTTPS, DNS, …)' },
   { value: 'name', label: 'process', title: 'Process name' },
@@ -257,6 +260,7 @@ export function ThroughputChart({ range, slots, overlays, actions, chartRef, unk
 
   return (
     <Panel
+      id={THROUGHPUT_PANEL_ID}
       title="Throughput"
       subtitle={
         <>

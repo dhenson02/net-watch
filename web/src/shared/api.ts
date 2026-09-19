@@ -379,3 +379,43 @@ export interface ScatterResponse {
   /** More points matched than `limit`; the smallest were left out. */
   truncated: boolean;
 }
+
+// ---------------------------------------------------------------------------
+// Hour-of-day × weekday heatmap (06)
+
+/** Bytes the cells count: tx + rx, sent or received. */
+export type HeatmapMetric = 'total' | 'tx' | 'rx';
+/** `app`: one grid per top-4 app instead of one for all traffic. */
+export type HeatmapSplit = 'none' | 'app';
+
+/** 7 weekdays × 24 hours; cell `dow * 24 + hour`, dow 0 = Monday, in the response's `tz`. */
+export const HEATMAP_CELLS = 168;
+
+export interface HeatmapGrid {
+  /** The app (`split=app`), else null. */
+  key: string | null;
+  /** Bytes of the grid over the range. */
+  bytes: number;
+  /** Per cell: average kbps over that hour (bytes / samples as a rate), null where the range holds no sample. */
+  kbps: (number | null)[];
+  /** Per cell: dates with any traffic in it, to tell a steady hour from one busy day. */
+  active: number[];
+}
+
+export interface HeatmapResponse {
+  from: number;
+  to: number;
+  tz: string;
+  metric: HeatmapMetric;
+  split: HeatmapSplit;
+  /**
+   * Start of the part of the range the rollup has data for (its first minute
+   * when that is after `from`); the samples count from here. Null when the
+   * rollup is empty.
+   */
+  coveredFrom: number | null;
+  /** Per cell: how many times that weekday-hour occurs in the covered range (the averages' divisor). */
+  samples: number[];
+  /** Largest `bytes` first; empty without traffic. */
+  grids: HeatmapGrid[];
+}

@@ -1061,3 +1061,39 @@ input:focus-visible {
   margin: 0 0 4px;
   font-size: 12px;
 }
+
+/* Hour × weekday heatmap (06) */
+.heatmap-note {
+  margin: 0 0 8px;
+}
+
+.heatmap-multiples {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 24px;
+}
+
+@media (max-width: 800px) {
+  .heatmap-multiples {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.heatmap-multiple {
+  margin: 0;
+  min-width: 0;
+}
+
+.heatmap-multiple figcaption {
+  margin-bottom: 2px;
+  font-size: 13px;
+}
+
+.heatmap-key {
+  font-weight: 600;
+}
+
+/* Panels scrolled to (06 → throughput) clear the sticky top bar. */
+.panel {
+  scroll-margin-top: 64px;
+}

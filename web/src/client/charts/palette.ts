@@ -18,6 +18,16 @@ export const CATEGORICAL: Record<Scheme, readonly string[]> = {
 
 export const SLOTS = 8;
 
+/**
+ * Sequential single-hue ramp (the dataviz reference blue, steps 100→700),
+ * low → high, for continuous magnitude such as heatmap cells. Near zero
+ * recedes toward the surface: light in light mode, dark in dark mode.
+ */
+export const SEQUENTIAL: Record<Scheme, readonly string[]> = {
+  light: ['#cde2fb', '#9ec5f4', '#6da7ec', '#3987e5', '#256abf', '#184f95', '#0d366b'],
+  dark: ['#0d366b', '#184f95', '#256abf', '#3987e5', '#6da7ec', '#9ec5f4', '#cde2fb'],
+};
+
 /** The "other" bucket: neutral, never a hue. */
 export const OTHER: Record<Scheme, string> = { light: '#898781', dark: '#898781' };
 

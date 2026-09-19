@@ -8,6 +8,7 @@ import type {
   CompactTick,
   FlowAgg,
   HealthResponse,
+  HeatmapResponse,
   HistoryFlowsResponse,
   HistoryIngest,
   HistorySummary,
@@ -421,6 +422,76 @@ test('history scatter: per instance or name, lifetime or range, largest first, f
   assert.deepEqual(empty.body.points, []);
   for (const q of ['group=uid', 'basis=total', 'limit=0', 'limit=5001', 'uid=x', 'from=5&to=4']) {
     assert.equal((await get(`/api/history/scatter?${q}`)).status, 400, q);
+  }
+});
+
+test('history heatmap: 168 cells per grid, bytes match the summary, metrics, split, tz, filters', async () => {
+  // Minute-aligned, so the heatmap's and the summary's rollup edges agree.
+  const to = Math.floor(Date.now() / 60_000) * 60_000;
+  const from = to - 28 * 86_400_000;
+  const range = `from=${from}&to=${to}`;
+  const check = (b: HeatmapResponse) => {
+    assert.equal(b.samples.length, 168);
+    for (const g of b.grids) {
+      assert.equal(g.kbps.length, 168);
+      assert.equal(g.active.length, 168);
+      g.kbps.forEach((v, i) => {
+        if (b.samples[i] === 0) assert.equal(v, null);
+        else assert.ok(v !== null && v >= 0, `cell ${i}`);
+        assert.ok(g.active[i]! <= b.samples[i]!, `active ≤ samples, cell ${i}`);
+      });
+      // The cells' rates give back the grid's bytes.
+      const back = g.kbps.reduce<number>((s, v, i) => s + ((v ?? 0) * b.samples[i]! * 3600 * 1000) / 8, 0);
+      assert.ok(Math.abs(back - g.bytes) <= Math.max(1, g.bytes * 1e-9), `${back} vs ${g.bytes}`);
+    }
+    for (let i = 1; i < b.grids.length; i++) assert.ok(b.grids[i - 1]!.bytes >= b.grids[i]!.bytes, 'largest first');
+  };
+  const all = await get<HeatmapResponse>(`/api/history/heatmap?${range}&tz=UTC`);
+  assert.equal(all.status, 200);
+  check(all.body);
+  assert.equal(all.body.tz, 'UTC');
+  assert.equal(all.body.split, 'none');
+  assert.ok(all.body.grids.length <= 1);
+  assert.equal(all.body.grids[0]?.key ?? null, null);
+  const sum = await get<HistorySummary>(`/api/history/summary?${range}`);
+  assert.equal(all.body.grids[0]?.bytes ?? 0, sum.body.txBytes + sum.body.rxBytes);
+  if (all.body.coveredFrom !== null) {
+    assert.ok(all.body.coveredFrom >= from);
+    // Four whole weeks of samples at most, fewer where the data starts later.
+    assert.ok(all.body.samples.every((n) => n <= 5));
+  }
+
+  const tx = await get<HeatmapResponse>(`/api/history/heatmap?${range}&tz=UTC&metric=tx`);
+  const rx = await get<HeatmapResponse>(`/api/history/heatmap?${range}&tz=UTC&metric=rx`);
+  assert.equal((tx.body.grids[0]?.bytes ?? 0) + (rx.body.grids[0]?.bytes ?? 0), all.body.grids[0]?.bytes ?? 0);
+
+  // Another zone moves bytes between cells, not in total.
+  const ny = await get<HeatmapResponse>(`/api/history/heatmap?${range}&tz=${encodeURIComponent('America/New_York')}`);
+  assert.equal(ny.status, 200);
+  check(ny.body);
+  assert.equal(ny.body.grids[0]?.bytes ?? 0, all.body.grids[0]?.bytes ?? 0);
+
+  const split = await get<HeatmapResponse>(`/api/history/heatmap?${range}&tz=UTC&split=app`);
+  assert.equal(split.status, 200);
+  check(split.body);
+  assert.ok(split.body.grids.length <= 4);
+  assert.ok(split.body.grids.every((g) => typeof g.key === 'string'));
+  assert.ok(split.body.grids.reduce((s, g) => s + g.bytes, 0) <= (all.body.grids[0]?.bytes ?? 0));
+  const top = split.body.grids[0];
+  if (top) {
+    const one = await get<HeatmapResponse>(`/api/history/heatmap?${range}&tz=UTC&app=${encodeURIComponent(top.key!)}`);
+    assert.equal(one.body.grids[0]!.bytes, top.bytes);
+  }
+  // The default window is four weeks.
+  const def = await get<HeatmapResponse>('/api/history/heatmap');
+  assert.equal(def.status, 200);
+  assert.equal(def.body.to - def.body.from, 28 * 86_400_000);
+  const uid = await get<HeatmapResponse>(`/api/history/heatmap?${range}&uid=0`);
+  assert.equal(uid.status, 200);
+  const none = await get<HeatmapResponse>(`/api/history/heatmap?${range}&name=no-such-proc`);
+  assert.deepEqual(none.body.grids, []);
+  for (const q of ['metric=bytes', 'split=name', 'tz=Mars/Base', 'from=5&to=4', `from=0&to=${400 * 86_400_000}`, 'uid=x']) {
+    assert.equal((await get(`/api/history/heatmap?${q}`)).status, 400, q);
   }
 });
 
