@@ -17,10 +17,15 @@ type Props = {
   children?: ReactNode;
   /** Element id, e.g. a scroll target. */
   id?: string;
+  /**
+   * Makes the title a disclosure button (▸/▾) that calls `onToggle`; while
+   * `collapsed`, only the header shows.
+   */
+  collapsible?: { collapsed: boolean; onToggle: () => void };
 };
 
 /** A titled card with loading, error and empty states. */
-export function Panel({ title, subtitle, actions, footnote = PAYLOAD_NOTE, loading, error, empty, wide, children, id }: Props) {
+export function Panel({ title, subtitle, actions, footnote = PAYLOAD_NOTE, loading, error, empty, wide, children, id, collapsible }: Props) {
   let body = children;
   if (error) {
     body = (
@@ -36,7 +41,15 @@ export function Panel({ title, subtitle, actions, footnote = PAYLOAD_NOTE, loadi
     <section id={id} className={`panel${wide ? ' panel-wide' : ''}`} aria-busy={loading || undefined}>
       <header className="panel-head">
         <div>
-          <h2 className="panel-title">{title}</h2>
+          <h2 className="panel-title">
+            {collapsible ? (
+              <button type="button" className="panel-toggle" aria-expanded={!collapsible.collapsed} onClick={collapsible.onToggle}>
+                {title} <span aria-hidden="true">{collapsible.collapsed ? '▸' : '▾'}</span>
+              </button>
+            ) : (
+              title
+            )}
+          </h2>
           {subtitle && <p className="panel-subtitle">{subtitle}</p>}
         </div>
         {(actions || loading) && (
@@ -46,8 +59,12 @@ export function Panel({ title, subtitle, actions, footnote = PAYLOAD_NOTE, loadi
           </div>
         )}
       </header>
-      <div className="panel-body">{body}</div>
-      {footnote && <footer className="panel-foot">{footnote}</footer>}
+      {!collapsible?.collapsed && (
+        <>
+          <div className="panel-body">{body}</div>
+          {footnote && <footer className="panel-foot">{footnote}</footer>}
+        </>
+      )}
     </section>
   );
 }

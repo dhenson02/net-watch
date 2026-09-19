@@ -6,6 +6,7 @@ import {
   THROUGHPUT_OTHER,
   type CompareOffset,
   type ThroughputBy,
+  type ThroughputCalls,
   type ThroughputCompare,
   type ThroughputDir,
   type ThroughputResponse,
@@ -83,6 +84,20 @@ export type ThroughputRow = { t: number; key: string; tx: string | number; rx: s
 /** bytes over `seconds` → kbps, rounded to 3 decimals (bps) to keep the JSON small. */
 export const kbps = (bytes: number, seconds: number) => (seconds > 0 ? Math.round((bytes * 8) / seconds) / 1000 : 0);
 
+/** The number of buckets of an aligned range (at least one). */
+export const bucketCount = (r: Range) => Math.max(1, Math.ceil((r.to - r.from) / (r.step * 1000)));
+
+/**
+ * The seconds each bucket (starting at `t`) covers: the step, except for a
+ * bucket cut short by the end of the range (`flows_1m` rows cover whole
+ * minutes, so up to the minute after `to`).
+ */
+export function coveredSeconds(r: Range, t: readonly number[]): number[] {
+  const stepMs = r.step * 1000;
+  const dataEnd = r.table === 'flows' ? r.to : Math.ceil(r.to / 60_000) * 60_000;
+  return t.map((start) => (Math.min(start + stepMs, Math.max(dataEnd, start)) - start) / 1000);
+}
+
 /**
  * Rows → the response: keys ranked by the direction's total (ties by key,
  * THROUGHPUT_OTHER last), one zero-filled value per bucket and key, converted
@@ -93,8 +108,7 @@ export const kbps = (bytes: number, seconds: number) => (seconds > 0 ? Math.roun
 export function buildThroughput(rows: readonly ThroughputRow[], r: Range, dir: ThroughputDir, labels: Record<string, string> = {}): ThroughputResponse {
   const stepMs = r.step * 1000;
   const from = r.from;
-  const n = Math.max(1, Math.ceil((r.to - from) / stepMs));
-  const dataEnd = r.table === 'flows' ? r.to : Math.ceil(r.to / 60_000) * 60_000;
+  const n = bucketCount(r);
 
   const totals = new Map<string, number>();
   const tx = new Map<string, number[]>();
@@ -120,7 +134,7 @@ export function buildThroughput(rows: readonly ThroughputRow[], r: Range, dir: T
   });
 
   const t = Array.from({ length: n }, (_, i) => from + i * stepMs);
-  const seconds = t.map((start) => (Math.min(start + stepMs, Math.max(dataEnd, start)) - start) / 1000);
+  const seconds = coveredSeconds(r, t);
   const rate = (bytes: number[]) => bytes.map((b, i) => kbps(b, seconds[i]!));
   const out: ThroughputResponse = { step: r.step, from, to: r.to, table: r.table, keys, labels: {}, t, tx: {}, rx: {} };
   for (const k of keys) {
@@ -240,4 +254,50 @@ export function buildUnknown(rows: readonly UnknownRow[], r: Range): ThroughputU
   }
   const share = total.map((tot, i) => (tot > 0 ? Math.round((bytes[i]! / tot) * 1e4) / 1e4 : null));
   return { share, bytes, total };
+}
+
+// ---------------------------------------------------------------------------
+// Bytes vs calls (14): send/receive calls per bucket, totals only
+
+export function parseCalls(raw: unknown): boolean {
+  if (raw === undefined || raw === '' || raw === '0') return false;
+  if (raw === '1') return true;
+  throw badRequest('calls: expected 1 or 0');
+}
+
+/** Per bucket of the range (the main query's buckets and table), the send and receive calls, with the filters applied. */
+export function callsQuery(r: Range, filters: Filters): { sql: string; params: Record<string, unknown> } {
+  const time = timeFilter(r);
+  const src = flowSource(r.table, time, filters.uid !== undefined);
+  const f = filterSql(filters);
+  const sql = `SELECT ${bucketSeconds(r)} AS t, sum(tx_calls) AS tx, sum(rx_calls) AS rx
+    FROM ${src}
+    WHERE ${time}${f.sql}
+    GROUP BY t
+    ORDER BY t`;
+  return { sql, params: { ...rangeParams(r), ...f.params } };
+}
+
+export type CallsRow = { t: number; tx: string | number; rx: string | number };
+
+/** Calls over `seconds` → calls per second, to 6 decimals (one call an hour stays visible). */
+export const perSecond = (calls: number, seconds: number) => (seconds > 0 ? Math.round((calls / seconds) * 1e6) / 1e6 : 0);
+
+/** Rows → calls per second per bucket of `r`, zero-filled, aligned with buildThroughput's `t`. */
+export function buildCalls(rows: readonly CallsRow[], r: Range): ThroughputCalls {
+  const stepMs = r.step * 1000;
+  const n = bucketCount(r);
+  const tx = new Array<number>(n).fill(0);
+  const rx = new Array<number>(n).fill(0);
+  for (const row of rows) {
+    const i = Math.round((row.t * 1000 - r.from) / stepMs);
+    if (i < 0 || i >= n) continue;
+    tx[i]! += Number(row.tx);
+    rx[i]! += Number(row.rx);
+  }
+  const seconds = coveredSeconds(
+    r,
+    tx.map((_, i) => r.from + i * stepMs),
+  );
+  return { tx: tx.map((c, i) => perSecond(c, seconds[i]!)), rx: rx.map((c, i) => perSecond(c, seconds[i]!)) };
 }

@@ -268,6 +268,38 @@ export interface ThroughputResponse {
   compare?: ThroughputCompare | null;
   /** Present when `unknown=1` was requested (16): the classifier's unlabelled share. */
   unknown?: ThroughputUnknown;
+  /** Present when `calls=1` was requested (14): call rates over every key, filtered alike. */
+  calls?: ThroughputCalls;
+}
+
+/**
+ * Send and receive calls per second (14), totals over every key, aligned with
+ * a throughput answer's `t`. A call is one hooked send or receive (e.g. one
+ * `tcp_sendmsg`) that moved payload; a bucket cut short by `to` is divided by
+ * the time it covers, like the bytes.
+ */
+export interface ThroughputCalls {
+  tx: number[];
+  rx: number[];
+}
+
+/**
+ * `/api/process/:pid/:start/calls` (14): one process instance's bytes and
+ * calls per bucket, from raw `flows` (keyed by pid, proc_start).
+ */
+export interface ProcessCallsResponse {
+  /** Bucket width in seconds. */
+  step: number;
+  /** First bucket start (the requested `from` rounded down to `step`), ms. */
+  from: number;
+  to: number;
+  /** Bucket starts (ms), every bucket present, zero-filled. */
+  t: number[];
+  /** kbps, aligned with `t`. */
+  tx: number[];
+  rx: number[];
+  /** Calls per second, aligned with `t`. */
+  calls: ThroughputCalls;
 }
 
 /**

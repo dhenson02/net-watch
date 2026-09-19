@@ -17,6 +17,7 @@ import type {
   LiveFlowsResponse,
   LiveMeta,
   LiveSnapshotResponse,
+  ProcessCallsResponse,
   ProcessInfo,
   ScatterResponse,
   ThroughputCompare,
@@ -320,6 +321,87 @@ test('history throughput unknown: the unlabelled share per bucket, on the main g
   const plain = await get<ThroughputResponse>(`/api/history/throughput?from=${now - DAY}&to=${now}`);
   assert.equal(plain.body.unknown, undefined);
   for (const q of ['unknown=yes', 'unknown=2', 'unknown=true']) assert.equal((await get(`/api/history/throughput?${q}`)).status, 400, q);
+});
+
+test('history throughput calls: calls per second on the main grid, totals match flows, filters', async () => {
+  const now = Date.now();
+  const ch = createClickHouse(config.clickhouse);
+  try {
+    for (const span of [86_400_000, 3_600_000]) {
+      const res = await get<ThroughputResponse>(`/api/history/throughput?from=${now - span}&to=${now}&calls=1`);
+      assert.equal(res.status, 200);
+      const { calls, t, step, table } = res.body;
+      assert.ok(calls, 'calls present');
+      for (const a of [calls.tx, calls.rx]) {
+        assert.equal(a.length, t.length);
+        for (const v of a) assert.ok(v >= 0 && Number.isFinite(v));
+      }
+      // Whole buckets (all but the last): calls/s * step sums to the table's calls.
+      const end = t[t.length - 1]!;
+      const col = table === 'flows' ? 'ts' : 'minute';
+      const rs = await ch.query({
+        query: `SELECT sum(tx_calls) AS tx, sum(rx_calls) AS rx FROM ${table}
+                WHERE ${col} >= fromUnixTimestamp64Milli({from:Int64}) AND ${col} < fromUnixTimestamp64Milli({to:Int64})`,
+        query_params: { from: res.body.from, to: end },
+        format: 'JSONEachRow',
+      });
+      const [want] = await rs.json<{ tx: string; rx: string }>();
+      for (const d of ['tx', 'rx'] as const) {
+        const got: number = calls[d].slice(0, -1).reduce((a, v) => a + v * step, 0);
+        const w = Number(want![d]);
+        assert.ok(Math.abs(got - w) <= Math.max(1, w * 0.001), `${span} ${d}: ${got} vs ${w}`);
+      }
+      // A filter keeps a subset.
+      const top = (await get<ThroughputResponse>(`/api/history/throughput?from=${now - span}&to=${now}&by=name&top=5`)).body.keys[0];
+      if (top && top !== THROUGHPUT_OTHER) {
+        const one = (await get<ThroughputResponse>(`/api/history/throughput?from=${now - span}&to=${now}&calls=1&name=${encodeURIComponent(top)}`)).body.calls!;
+        one.tx.forEach((v, i) => assert.ok(v <= calls.tx[i]! + 1e-6, `filtered tx (${i})`));
+      }
+    }
+  } finally {
+    await ch.close();
+  }
+  const plain = await get<ThroughputResponse>(`/api/history/throughput?from=${now - 3_600_000}&to=${now}`);
+  assert.equal(plain.body.calls, undefined);
+  for (const q of ['calls=yes', 'calls=2', 'calls=true']) assert.equal((await get(`/api/history/throughput?${q}`)).status, 400, q);
+});
+
+test('process calls: one instance from raw flows, bytes and calls per bucket', async () => {
+  const ch = createClickHouse(config.clickhouse);
+  try {
+    // The instance with the most raw calls.
+    const rs = await ch.query({
+      query: `SELECT pid, toString(proc_start) AS start, toUnixTimestamp64Milli(min(ts)) AS first, toUnixTimestamp64Milli(max(ts)) AS last,
+                     sum(tx_bytes) AS txb, sum(rx_bytes) AS rxb, sum(tx_calls) AS txc, sum(rx_calls) AS rxc
+              FROM flows GROUP BY pid, proc_start ORDER BY txc + rxc DESC LIMIT 1`,
+      format: 'JSONEachRow',
+    });
+    const [row] = await rs.json<{ pid: number; start: string; first: string; last: string; txb: string; rxb: string; txc: string; rxc: string }>();
+    if (row) {
+      // Over 2 h (minute steps), ending well after the last row, so every bucket with data is whole.
+      const from = Number(row.first) - 60_000;
+      const to = Number(row.last) + 3 * 3_600_000;
+      const res = await get<ProcessCallsResponse>(`/api/process/${row.pid}/${row.start}/calls?from=${from}&to=${to}`);
+      assert.equal(res.status, 200);
+      const b = res.body;
+      assert.ok(b.step >= 60, 'a span over 2 h gets minute steps');
+      for (const a of [b.tx, b.rx, b.calls.tx, b.calls.rx]) assert.equal(a.length, b.t.length);
+      assert.equal(b.from % (b.step * 1000), 0);
+      const sum = (a: number[]) => a.reduce((s, v) => s + v * b.step, 0);
+      const near = (got: number, want: number, what: string) => assert.ok(Math.abs(got - want) <= Math.max(2, want * 0.002), `${what}: ${got} vs ${want}`);
+      near(sum(b.calls.tx), Number(row.txc), 'tx calls');
+      near(sum(b.calls.rx), Number(row.rxc), 'rx calls');
+      near((sum(b.tx) * 1000) / 8, Number(row.txb), 'tx bytes');
+      near((sum(b.rx) * 1000) / 8, Number(row.rxb), 'rx bytes');
+    }
+  } finally {
+    await ch.close();
+  }
+  const none = await get<ProcessCallsResponse>('/api/process/1/18446744073709551615/calls');
+  assert.equal(none.status, 200);
+  assert.ok(none.body.calls.tx.every((v) => v === 0));
+  assert.equal((await get('/api/process/x/1/calls')).status, 400);
+  assert.equal((await get('/api/process/1/1/calls?from=5&to=1')).status, 400);
 });
 
 test('history lifecycle: processes whose first I/O or end is in range, largest first, filters', async () => {

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { urls, type ProcessInfo, type TimeRange } from '../api.ts';
 import { fmtBytes, fmtDuration, fmtTime } from '../charts/format.ts';
 import { Panel } from '../components/Panel.tsx';
+import { ProcessCallsPanel } from '../history/CallsPanel.tsx';
 import { ProcessGantt } from '../history/ProcessGantt.tsx';
 import { useQuery, type QueryState } from '../hooks/useQuery.ts';
 import { Link } from '../router.ts';
@@ -55,6 +56,8 @@ function ProcessSections({ p, week }: { p: ProcessInfo; week: TimeRange }) {
         title={`Instances of ${p.name}`}
         subtitle="Every instance of this program over the last 7 days, this one outlined; thin and hatched until its first network I/O, arrow: still running; color: lifetime bytes (log)"
       />
+      {/* 14: this instance's bytes, calls and bytes per call over its traffic window. */}
+      <ProcessCallsPanel p={p} />
     </>
   );
 }

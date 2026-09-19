@@ -35,10 +35,14 @@ import {
   FIRST_MINUTE_SQL,
   parseCompare,
   buildUnknown,
+  buildCalls,
+  callsQuery,
+  parseCalls,
   parseDir,
   parseUnknown,
   throughputQuery,
   unknownQuery,
+  type CallsRow,
   type CompareRow,
   type ThroughputRow,
   type UnknownRow,
@@ -134,6 +138,7 @@ export function historyRoutes(app: FastifyInstance, deps: { clickhouse: ClickHou
    * bucket start. Filters: name, app, proto, uid, dest (exact). `compare=1d|1w`
    * adds the same window that long before, totals only (11). `unknown=1`
    * adds the share of bytes the classifier labelled unknown, per bucket (16).
+   * `calls=1` adds send/receive calls per second, totals only (14).
    */
   app.get<RangeQuery>('/api/history/throughput', async (req, reply): Promise<ThroughputResponse> => {
     const r = alignRange(parseRange(req.query));
@@ -150,11 +155,14 @@ export function historyRoutes(app: FastifyInstance, deps: { clickhouse: ClickHou
     // table's first minute, to tell "no data back then" from "no traffic".
     // 16: unknown vs all bytes over the same buckets.
     const unk = parseUnknown(req.query.unknown) ? unknownQuery(r, filters) : null;
-    const [rows, ghostRows, first, unkRows] = await Promise.all([
+    // 14: calls over the same buckets, totals only.
+    const calls = parseCalls(req.query.calls) ? callsQuery(r, filters) : null;
+    const [rows, ghostRows, first, unkRows, callRows] = await Promise.all([
       chQuery<ThroughputRow>(ch, req.log, sql, params, gone),
       ghost && chQuery<CompareRow>(ch, req.log, ghost.sql, ghost.params, gone),
       ghost && chQuery<{ first: number }>(ch, req.log, FIRST_MINUTE_SQL, {}, gone),
       unk && chQuery<UnknownRow>(ch, req.log, unk.sql, unk.params, gone),
+      calls && chQuery<CallsRow>(ch, req.log, calls.sql, calls.params, gone),
     ]);
     const labels: Record<string, string> = {};
     if (by === 'uid') {
@@ -168,6 +176,7 @@ export function historyRoutes(app: FastifyInstance, deps: { clickhouse: ClickHou
     const out = buildThroughput(rows, r, dir, labels);
     if (ghostRows && first) out.compare = buildCompare(ghostRows, r, offset, first[0] ? Number(first[0].first) * 1000 : null);
     if (unkRows) out.unknown = buildUnknown(unkRows, r);
+    if (callRows) out.calls = buildCalls(callRows, r);
     return out;
   });
 

@@ -1,12 +1,15 @@
 import type { FastifyInstance } from 'fastify';
-import type { ProcessInfo } from '../../shared/api.ts';
+import type { ProcessCallsResponse, ProcessInfo } from '../../shared/api.ts';
+import { buildProcessCalls, processCallsQuery, rawRange, type ProcessCallsRow } from '../ch/calls.ts';
 import { chQuery, clientGone } from '../ch/query.ts';
+import { parseRange } from '../ch/range.ts';
 import type { ClickHouseClient } from '../db/clickhouse.ts';
 import { badRequest, HttpError } from '../http-error.ts';
 
 const U64_MAX = 2n ** 64n - 1n;
 
 type ProcessParams = { Params: { pid: string; start: string } };
+type ProcessRangeParams = ProcessParams & { Querystring: Record<string, string | undefined> };
 
 /** Validates `:pid/:start`. `start` (ns since boot, u64) stays a string. */
 function parseId(params: { pid: string; start: string }): { pid: number; start: string } {
@@ -55,5 +58,19 @@ export function processRoutes(app: FastifyInstance, deps: { clickhouse: ClickHou
       tx_total: Number(row.tx_total),
       rx_total: Number(row.rx_total),
     };
+  });
+
+  /**
+   * Bytes vs calls (14) of one instance over `from`/`to` (ms, default: the
+   * last hour) in buckets of `step` (s, raised to at most ~1500 buckets):
+   * kbps and calls per second, from raw `flows` whatever the span, since its
+   * key starts with (pid, proc_start). Zero-filled; no 404 for an unknown id.
+   */
+  app.get<ProcessRangeParams>('/api/process/:pid/:start/calls', async (req, reply): Promise<ProcessCallsResponse> => {
+    const id = parseId(req.params);
+    const r = rawRange(parseRange(req.query));
+    const { sql, params } = processCallsQuery(r, id);
+    const rows = await chQuery<ProcessCallsRow>(ch, req.log, sql, params, clientGone(reply));
+    return buildProcessCalls(rows, r);
   });
 }

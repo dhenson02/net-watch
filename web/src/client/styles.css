@@ -263,6 +263,20 @@ a:hover {
   font-weight: 600;
 }
 
+/* A collapsible panel's title (Panel `collapsible`). */
+.panel-toggle {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.panel-toggle:hover {
+  color: var(--accent);
+}
+
 .panel-subtitle {
   margin: 2px 0 0;
   color: var(--muted);

@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { urls, type HistorySummary } from '../api.ts';
 import { HistoryFlowSankey } from '../charts/FlowSankey.tsx';
 import { fmtBytes, fmtDuration, fmtTime } from '../charts/format.ts';
@@ -9,9 +10,11 @@ import { SegmentedControl } from '../components/SegmentedControl.tsx';
 import { parseEventsMode, type EventsMode } from '../history/clusterMarkers.ts';
 import { ActivityHeatmap } from '../history/ActivityHeatmap.tsx';
 import { BandwidthTreemap } from '../history/BandwidthTreemap.tsx';
+import { HistoryCallsPanel } from '../history/CallsPanel.tsx';
+import { parseCallsParam } from '../history/callsSeries.ts';
 import { LifecycleTrack } from '../history/LifecycleTrack.tsx';
 import { ProcessGantt } from '../history/ProcessGantt.tsx';
-import { ThroughputChart } from '../history/ThroughputChart.tsx';
+import { ThroughputChart, type ThroughputAnswer } from '../history/ThroughputChart.tsx';
 import { TxRxScatter } from '../history/TxRxScatter.tsx';
 import { UnknownShareTrack } from '../history/UnknownShareTrack.tsx';
 import { parseUnknownParam } from '../history/unknownShare.ts';
@@ -40,6 +43,9 @@ export function HistoryPage() {
   const search = useSearch();
   const events = parseEventsMode(new URLSearchParams(search).get('events'));
   const unknown = parseUnknownParam(search);
+  // 14: the calls panel reads the throughput answer, which carries the calls while it is open.
+  const callsOpen = parseCallsParam(search);
+  const [answer, setAnswer] = useState<ThroughputAnswer | null>(null);
   const throughputChart = useEChartRef();
   const summary = useQuery<HistorySummary>(urls.historySummary(range, filters));
   const s = summary.data;
@@ -75,7 +81,7 @@ export function HistoryPage() {
               clear all
             </button>
           )}
-          <span className="muted">applies to the totals, the throughput chart, the activity heatmap, the bandwidth treemap, the sent/received scatter, the flow diagram and (process and uid only) the process lifetimes</span>
+          <span className="muted">applies to the totals, the throughput chart, the calls panel, the activity heatmap, the bandwidth treemap, the sent/received scatter, the flow diagram and (process and uid only) the process lifetimes</span>
         </p>
       )}
       <div className="panels">
@@ -98,6 +104,8 @@ export function HistoryPage() {
           slots={slots}
           chartRef={throughputChart}
           unknown={unknown}
+          calls={callsOpen}
+          onAnswer={callsOpen ? setAnswer : undefined}
           actions={
             <>
               <SegmentedControl<EventsMode>
@@ -134,6 +142,8 @@ export function HistoryPage() {
             </>
           )}
         />
+
+        <HistoryCallsPanel range={range} open={callsOpen} answer={callsOpen ? answer : null} />
 
         <ActivityHeatmap filters={filters} />
 

@@ -11,10 +11,16 @@ import {
   kbps,
   parseCompare,
   buildUnknown,
+  buildCalls,
+  callsQuery,
+  coveredSeconds,
+  parseCalls,
+  perSecond,
   parseDir,
   parseUnknown,
   throughputQuery,
   unknownQuery,
+  type CallsRow,
   type ThroughputRow,
   type UnknownRow,
 } from './throughput.ts';
@@ -218,4 +224,51 @@ test('buildUnknown: per bucket on the throughput grid, share null without traffi
   assert.deepEqual(out.share, [0.25, null, 0, 0.5]);
   assert.equal(out.share.length, buildThroughput([], r, 'both').t.length);
   assert.equal(buildUnknown([urow(T0, 1, 3)], r).share[0], 0.3333);
+});
+
+// ---------------------------------------------------------------------------
+// bytes vs calls (14)
+
+const callRow = (tMs: number, tx: number, rx: number): CallsRow => ({ t: tMs / 1000, tx: String(tx), rx: String(rx) });
+
+test('parseCalls: 1 or 0, default off', () => {
+  assert.equal(parseCalls(undefined), false);
+  assert.equal(parseCalls('0'), false);
+  assert.equal(parseCalls('1'), true);
+  for (const bad of ['true', 'yes', '2', ['1']]) assert.throws(() => parseCalls(bad), /calls/);
+});
+
+test('perSecond: calls over seconds, 6 decimals', () => {
+  assert.equal(perSecond(50, 10), 5);
+  assert.equal(perSecond(1, 3600), 0.000278);
+  assert.equal(perSecond(3, 0), 0);
+});
+
+test('coveredSeconds: the step, less for a bucket cut short by to', () => {
+  assert.deepEqual(coveredSeconds(raw(T0, T0 + 25 * S, 10), [T0, T0 + 10 * S, T0 + 20 * S]), [10, 10, 5]);
+  // the rollup covers up to the minute after `to`
+  assert.deepEqual(coveredSeconds(rollup(T0, T0 + 90 * S, 60), [T0, T0 + 60 * S]), [60, 60]);
+  assert.deepEqual(coveredSeconds(rollup(T0, T0 + 150 * S, 120), [T0, T0 + 120 * S]), [120, 60]);
+});
+
+test('callsQuery: the main buckets and table, filters in params only', () => {
+  const r = raw(T0, T0 + 3600 * S, 10);
+  const q = callsQuery(r, { name: "x' OR 1=1 --" });
+  assert.ok(!q.sql.includes("x' OR"));
+  assert.match(q.sql, /sum\(tx_calls\) AS tx, sum\(rx_calls\) AS rx/);
+  assert.match(q.sql, /toStartOfInterval\(ts, INTERVAL \{step:UInt32\} SECOND\)/);
+  assert.match(q.sql, /FROM flows\s/);
+  assert.deepEqual(q.params, { from: r.from, to: r.to, step: 10, f_name: "x' OR 1=1 --" });
+  const long = rollup(T0, T0 + 86400 * S, 60);
+  assert.match(callsQuery(long, {}).sql, /FROM flows_1m\s/);
+  assert.match(callsQuery(long, { uid: 1000 }).sql, /LEFT JOIN/);
+});
+
+test('buildCalls: calls per second on the throughput grid, zero-filled', () => {
+  const r = raw(T0, T0 + 35 * S, 10);
+  const rows = [callRow(T0, 20, 5), callRow(T0 + 20 * S, 0, 10), callRow(T0 + 30 * S, 5, 0), callRow(T0 + 30 * S, 5, 0), callRow(T0 + 90 * S, 1, 1)];
+  const out = buildCalls(rows, r);
+  assert.deepEqual(out.tx, [2, 0, 0, 2]); // the last bucket covers 5 s
+  assert.deepEqual(out.rx, [0.5, 0, 1, 0]);
+  assert.equal(out.tx.length, buildThroughput([], r, 'both').t.length);
 });

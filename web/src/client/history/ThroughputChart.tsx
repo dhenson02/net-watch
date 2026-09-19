@@ -23,6 +23,9 @@ import { COMPARE_NOUN, deviationRuns, GHOST_ID, ghostAt, ghostSeries, ghostText,
 import { bandColors, buildSeries, drillDown, TOP_DEFAULT, type HistorySeries } from './throughputSeries.ts';
 import { useThroughput, useThroughputParams } from './useThroughput.ts';
 
+/** The throughput query's state as `onAnswer` passes it. */
+export type ThroughputAnswer = { data: ThroughputResponse | null; stale: boolean; loading: boolean; error: string | null };
+
 /** The throughput panel's element id: other panels scroll to it after setting the range (06). */
 export const THROUGHPUT_PANEL_ID = 'throughput';
 
@@ -80,6 +83,13 @@ type Props = {
   chartRef?: RefObject<EChartsType | null>;
   /** Also request the unknown-protocol share (16), passed to `below` as part of `answer`. */
   unknown?: boolean;
+  /** Also request the call rates (14), for `onAnswer`. */
+  calls?: boolean;
+  /**
+   * Receives the query's state whenever it changes (14's calls panel reads
+   * the same answer rather than asking again). `data` may be stale.
+   */
+  onAnswer?: (state: ThroughputAnswer) => void;
   /**
    * Rendered under the plot inside the panel (12's lifecycle track, 16's
    * unknown share). `topKeys` are the answer's keys without "other"; they and
@@ -96,12 +106,17 @@ type Props = {
  * dimension. `compare=1d|1w` (11) draws the same window that long before as
  * a dashed ghost behind the stack.
  */
-export function ThroughputChart({ range, slots, overlays, actions, chartRef, unknown = false, below }: Props) {
+export function ThroughputChart({ range, slots, overlays, actions, chartRef, unknown = false, calls = false, onAnswer, below }: Props) {
   const p = useThroughputParams();
   const search = useSearch();
   const compare = useMemo(() => parseCompareParam(search), [search]);
   const ownSlots = useSlots();
-  const q = useThroughput(range, p, slots, ownSlots, compare, unknown);
+  const q = useThroughput(range, p, slots, ownSlots, compare, unknown, calls);
+  const answerTo = useRef(onAnswer);
+  answerTo.current = onAnswer;
+  useEffect(() => {
+    answerTo.current?.({ data: q.data ?? null, stale: q.stale, loading: q.loading, error: q.error });
+  }, [q.data, q.stale, q.loading, q.error]);
   const scheme = useColorScheme();
   const ownChart = useEChartRef();
   const chart = chartRef ?? ownChart;

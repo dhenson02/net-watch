@@ -24,6 +24,9 @@ export interface TimeRange {
 /** The History page's `filter.*` values, sent as the endpoints' name/app/proto/uid/dest params. */
 type UrlFilters = Partial<Record<'name' | 'app' | 'proto' | 'uid' | 'dest', string>>;
 
+/** The finest step (s) the server allows for a range: about 1500 buckets. */
+const finestStep = (r: TimeRange) => Math.max(1, Math.ceil((r.to - r.from) / 1000 / 1500));
+
 // URL builders for useQuery (which is keyed by URL). Ids stay strings.
 export const urls = {
   historySummary: (r: TimeRange, filters: UrlFilters = {}) => `/api/history/summary?${qs({ from: r.from, to: r.to, ...filters })}`,
@@ -32,9 +35,19 @@ export const urls = {
   liveFlows: (seconds: number) => `/api/live/flows?${qs({ seconds })}`,
   // The finest step the server allows (~1500 buckets), so a zoom always sharpens: raw
   // flows get 1 s buckets at a few minutes, not the 10 s default.
-  // `compare` (1d/1w) adds the earlier window's totals (11); `unknown` the unlabelled share (16).
-  historyThroughput: (r: TimeRange, p: { by: string; dir: string; top: number; filters: UrlFilters }, compare?: string | null, unknown?: boolean) =>
-    `/api/history/throughput?${qs({ from: r.from, to: r.to, step: Math.max(1, Math.ceil((r.to - r.from) / 1000 / 1500)), by: p.by, dir: p.dir, top: p.top, ...p.filters, compare: compare ?? undefined, unknown: unknown ? 1 : undefined })}`,
+  // `compare` (1d/1w) adds the earlier window's totals (11); `unknown` the unlabelled share (16);
+  // `calls` the call rates (14).
+  historyThroughput: (
+    r: TimeRange,
+    p: { by: string; dir: string; top: number; filters: UrlFilters },
+    compare?: string | null,
+    unknown?: boolean,
+    calls?: boolean,
+  ) =>
+    `/api/history/throughput?${qs({ from: r.from, to: r.to, step: finestStep(r), by: p.by, dir: p.dir, top: p.top, ...p.filters, compare: compare ?? undefined, unknown: unknown ? 1 : undefined, calls: calls ? 1 : undefined })}`,
+  // 14: one instance's bytes and calls, from raw flows, at the finest step.
+  processCalls: (pid: string, start: string, r: TimeRange) =>
+    `/api/process/${encodeURIComponent(pid)}/${encodeURIComponent(start)}/calls?${qs({ from: r.from, to: r.to, step: finestStep(r) })}`,
   // `names` is comma-separated; omitted means the largest processes of any name.
   historyLifecycle: (r: TimeRange, p: { names?: readonly string[]; uid?: string; limit?: number } = {}) =>
     `/api/history/lifecycle?${qs({ from: r.from, to: r.to, names: p.names?.length ? p.names.join(',') : undefined, uid: p.uid, limit: p.limit })}`,
