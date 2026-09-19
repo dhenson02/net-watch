@@ -152,7 +152,7 @@ export function HistoryBytesPerCall({ range, filters }: { range: TimeRange; filt
         text: [fmtShare(max || 1), '0 %'],
         formatter: (v: number) => fmtShare(v),
         textGap: 8,
-        textStyle: { color: muted, fontSize: 11 },
+        textStyle: { color: muted, fontSize: 16 },
         inRange: { color: [...SEQUENTIAL[scheme]] },
       },
       series: [

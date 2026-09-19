@@ -97,7 +97,7 @@ export function smallMultiplesOption(spec: SmallMultiplesSpec, layout: Layout, m
       name: p.name,
       nameLocation: 'end',
       nameGap: 8,
-      nameTextStyle: { align: 'left', color: muted, fontSize: 11 },
+      nameTextStyle: { align: 'left', color: muted, fontSize: 16 },
       splitNumber: 3,
       ...p.yAxis,
     })),

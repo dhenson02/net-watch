@@ -97,7 +97,7 @@ export function NewDestTrack({ range, name, opts, slots, main }: Props) {
         data: ['new'],
         axisLine: { show: false },
         axisTick: { show: false },
-        axisLabel: { fontSize: 10, color: muted, formatter: () => '◆ new dest' },
+        axisLabel: { fontSize: 15, color: muted, formatter: () => '◆ new dest' },
       },
       dataZoom: [{ type: 'inside', xAxisIndex: 0, disabled: true, start: 0, end: 100 }],
       tooltip: {
@@ -122,7 +122,7 @@ export function NewDestTrack({ range, name, opts, slots, main }: Props) {
               value: [c.t, 'new'],
               symbolSize: n > 1 ? 13 : 10,
               itemStyle: { color: colorOf(c.name, muted), opacity: 0.9 },
-              label: n > 1 ? { show: true, position: 'right', distance: 2, formatter: String(n), fontSize: 10, color: muted } : { show: false },
+              label: n > 1 ? { show: true, position: 'right', distance: 2, formatter: String(n), fontSize: 15, color: muted } : { show: false },
             };
           }),
           emphasis: { scale: 1.3 },

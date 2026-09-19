@@ -138,7 +138,7 @@ export function TxRxScatter({ range, filters, slots }: Props) {
               {
                 coord: l.from,
                 lineStyle: { color: muted, type: l.id === 'even' ? 'solid' : 'dashed', width: 1, opacity: l.id === 'even' ? 0.7 : 0.6 },
-                label: l.label ? { show: true, formatter: l.label, position: 'insideEndTop', color: muted, fontSize: 11 } : { show: false },
+                label: l.label ? { show: true, formatter: l.label, position: 'insideEndTop', color: muted, fontSize: 16 } : { show: false },
               },
               { coord: l.to },
             ]),

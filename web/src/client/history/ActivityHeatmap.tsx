@@ -212,7 +212,7 @@ function HeatGrid({
         // The hover indicator shows the value back in kbps, not its log.
         formatter: (v: number) => fmtRate(fromLog(v)),
         textGap: 8,
-        textStyle: { color: muted, fontSize: 11 },
+        textStyle: { color: muted, fontSize: 16 },
         inRange: { color: [...SEQUENTIAL[scheme]] },
       },
       series: [
