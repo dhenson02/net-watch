@@ -12,6 +12,7 @@ export function themeName(scheme: Scheme): string {
   const grid = v('--chart-grid');
   const axis = v('--chart-axis');
   const surface = v('--surface');
+  const fontMono = v('--font-mono');
 
   const axisCommon = {
     axisLine: { lineStyle: { color: axis } },
@@ -25,7 +26,7 @@ export function themeName(scheme: Scheme): string {
   echarts.registerTheme(name, {
     color: [...CATEGORICAL[scheme]],
     backgroundColor: 'transparent',
-    textStyle: { fontFamily: 'inherit', color: text },
+    textStyle: { fontFamily: fontMono || 'monospace', color: text },
     legend: { textStyle: { color: text }, inactiveColor: muted },
     tooltip: {
       backgroundColor: surface,

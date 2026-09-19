@@ -139,7 +139,7 @@ export function mirroredStackOption({ stacks, muted, tooltip, grid: gridPatch, e
     ...pos,
     silent: true,
     z: 10,
-    style: { text, fill: muted, font: '11px sans-serif' },
+    style: { text, fill: muted, font: '16px sans-serif' },
   });
   const mirrored = stacks.length === 2;
   return {

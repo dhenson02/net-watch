@@ -183,7 +183,7 @@ export function ProcessGantt({ range, name, uid, highlight, title = 'Process lif
         text: [fmtBytes(10 ** hi), fmtBytes(lo <= 0 ? 0 : 10 ** lo)],
         formatter: (v: number) => fmtBytes(10 ** v),
         textGap: 8,
-        textStyle: { color: muted, fontSize: 11 },
+        textStyle: { color: muted, fontSize: 16 },
         inRange: { color: ramp(scheme) },
       },
       series: [

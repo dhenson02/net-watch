@@ -37,7 +37,7 @@ export function AsnBars({ data, selected, onSelect }: Props) {
         `<span class="muted">${esc(countryName(r.country))} · ${r.ips} IP${r.ips === 1 ? '' : 's'}</span>`,
         `↑ sent ${fmtBytes(r.tx)} · ↓ received ${fmtBytes(r.rx)}`,
         `${fmtBytes(r.bytes)} · ${pctText(r.bytes, total)} of ${data.dir === 'total' ? 'all bytes' : data.dir === 'tx' ? 'sent bytes' : 'received bytes'}`,
-        `<span class="muted" style="font-size:11px">click to list its destinations</span>`,
+        `<span class="muted" style="font-size:16px">click to list its destinations</span>`,
       ].join('<br>');
     };
     return {
@@ -52,7 +52,7 @@ export function AsnBars({ data, selected, onSelect }: Props) {
         axisLabel: { formatter: (v: number) => fmtBytes(Math.abs(v)), hideOverlap: true },
         splitLine: { lineStyle: { opacity: 0.5 } },
       },
-      yAxis: { type: 'category', data: bars.labels, axisTick: { show: false }, axisLabel: { fontSize: 11 } },
+      yAxis: { type: 'category', data: bars.labels, axisTick: { show: false }, axisLabel: { fontSize: 16 } },
       series: [
         {
           id: 'asn:tx',

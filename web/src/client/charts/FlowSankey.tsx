@@ -109,7 +109,7 @@ export function FlowSankey({ flows: incoming, mode, dir, slots, onDest, byAsn = 
               : '';
       const share = graph.total > 0 ? ` · ${((n.value / graph.total) * 100).toFixed(1)}%` : '';
       return (
-        `<b>${esc(n.label)}</b>: ${fmt(n.value)}${share}${breakdown(n, dir, fmt)}` + (hint ? `<div class="muted" style="font-size:11px">${hint}</div>` : '')
+        `<b>${esc(n.label)}</b>: ${fmt(n.value)}${share}${breakdown(n, dir, fmt)}` + (hint ? `<div class="muted" style="font-size:16px">${hint}</div>` : '')
       );
     };
     return {
@@ -134,7 +134,7 @@ export function FlowSankey({ flows: incoming, mode, dir, slots, onDest, byAsn = 
           draggable: false,
           emphasis: { focus: 'adjacency' },
           lineStyle: { color: 'gradient', curveness: 0.5, opacity: 0.35 },
-          label: { fontSize: 11, formatter: (p: { name: string }) => label(p.name) },
+          label: { fontSize: 16, formatter: (p: { name: string }) => label(p.name) },
           data: graph.nodes.map((n) => ({
             name: n.id,
             depth: n.depth,

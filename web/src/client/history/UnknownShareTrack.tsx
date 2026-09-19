@@ -62,7 +62,7 @@ export function UnknownShareTrack({ range, answer, main }: Props) {
         min: 0,
         max: 1,
         interval: 1,
-        axisLabel: { fontSize: 10, color: muted, formatter: (v: number) => (v === 1 ? '100 %' : '0 %') },
+        axisLabel: { fontSize: 15, color: muted, formatter: (v: number) => (v === 1 ? '100 %' : '0 %') },
         splitLine: { show: false },
       },
       // Driven by the chart above (useFollowZoom); a new range resets it like the chart does.

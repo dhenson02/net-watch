@@ -53,7 +53,7 @@ export function WorldMap({ data, selected, onSelect }: Props) {
       const cc = p.name as string;
       const head = `<b>${esc(countryName(cc))}</b> <span class="muted">${esc(cc)}</span>`;
       if (!d) return `${head}<br><span class="muted">no traffic</span>`;
-      return `${head}<br>${fmtBytes(d.bytes)} · ${pctText(d.bytes, total)} · ${d.ips} IP${d.ips === 1 ? '' : 's'}<br><span class="muted" style="font-size:11px">click to list its destinations</span>`;
+      return `${head}<br>${fmtBytes(d.bytes)} · ${pctText(d.bytes, total)} · ${d.ips} IP${d.ips === 1 ? '' : 's'}<br><span class="muted" style="font-size:16px">click to list its destinations</span>`;
     };
     return {
       animation: false,

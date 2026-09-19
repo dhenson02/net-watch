@@ -113,9 +113,9 @@ function StripChart({ d, range, focus }: { d: BeaconsResponse; range: TimeRange;
             width: GRID.left - 12,
             overflow: 'truncate',
             color: ink,
-            fontSize: 11,
+            fontSize: 16,
             formatter: (v: string) => (focusedLabels.has(v) ? `{focus|${v}}` : v),
-            rich: { focus: { color: accent, fontWeight: 700, fontSize: 11 } },
+            rich: { focus: { color: accent, fontWeight: 700, fontSize: 16 } },
           },
           splitLine: { show: true, lineStyle: { color: grid } },
         },
@@ -128,7 +128,7 @@ function StripChart({ d, range, focus }: { d: BeaconsResponse; range: TimeRange;
           axisLine: { show: false },
           axisLabel: {
             interval: 0,
-            fontSize: 11,
+            fontSize: 16,
             color: muted,
             formatter: (v: string) => {
               const dest = byLabel.get(v);
@@ -137,8 +137,8 @@ function StripChart({ d, range, focus }: { d: BeaconsResponse; range: TimeRange;
               return isPeriodic(dest) ? `{badge|periodic} ${text}` : text;
             },
             rich: {
-              txt: { color: muted, fontSize: 11 },
-              badge: { color: onAccent, backgroundColor: accent, borderRadius: 3, padding: [1, 4], fontSize: 10, fontWeight: 600 },
+              txt: { color: muted, fontSize: 16 },
+              badge: { color: onAccent, backgroundColor: accent, borderRadius: 3, padding: [1, 4], fontSize: 15, fontWeight: 600 },
             },
           },
         },
