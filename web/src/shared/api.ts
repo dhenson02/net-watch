@@ -292,3 +292,46 @@ export interface LifecycleResponse {
   /** More processes matched than `limit`; the smallest were left out. */
   truncated: boolean;
 }
+
+/** `/api/history/scatter`: one point per process instance, or per process name. */
+export type ScatterGroup = 'instance' | 'name';
+/** `lifetime`: the processes' lifetime totals; `range`: bytes within the range. */
+export type ScatterBasis = 'lifetime' | 'range';
+
+export interface ScatterPoint {
+  /** `pid:start_ns`; for a name, its busiest instance (click-through). */
+  id: string;
+  /** The instance's pid; for a name, the busiest instance's. */
+  pid: number;
+  name: string;
+  /** The start of the command line (at most 300 chars); for a name, the busiest instance's. */
+  cmdline: string;
+  /** 4294967295 when the process is unknown (range basis only). */
+  uid: number;
+  /** Username of `uid`, null if unknown. */
+  user: string | null;
+  /** Bytes sent and received (lifetime or within the range, see `basis`). */
+  tx: number;
+  rx: number;
+  /** Process instances in the point (1 for `group=instance`). */
+  instances: number;
+  /** Process start (exec), ms; for a name, the earliest. Null if the process is unknown. */
+  startMs: number | null;
+  /** End, ms; null while running (for a name: while any instance runs). */
+  endedMs: number | null;
+  /** Last network I/O, ms; for a name, the latest. */
+  lastSeenMs: number | null;
+}
+
+export interface ScatterResponse {
+  from: number;
+  to: number;
+  group: ScatterGroup;
+  basis: ScatterBasis;
+  /** The flow table the range and the filters are read from (raw flows up to 2 h, else the rollup). */
+  table: 'flows' | 'flows_1m';
+  /** Largest (tx + rx) first. */
+  points: ScatterPoint[];
+  /** More points matched than `limit`; the smallest were left out. */
+  truncated: boolean;
+}

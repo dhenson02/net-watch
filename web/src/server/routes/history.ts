@@ -1,8 +1,17 @@
 import type { FastifyInstance } from 'fastify';
-import type { HistoryFlowsResponse, HistoryIngest, HistorySummary, LifecycleResponse, ThroughputResponse } from '../../shared/api.ts';
+import type { HistoryFlowsResponse, HistoryIngest, HistorySummary, LifecycleResponse, ScatterResponse, ThroughputResponse } from '../../shared/api.ts';
 import { LIFECYCLE_LIMIT_DEFAULT, LIFECYCLE_LIMIT_MAX, lifecycleQuery, parseNames, toLifecycleProc, type LifecycleRow } from '../ch/lifecycle.ts';
 import { chQuery, clientGone } from '../ch/query.ts';
 import { parseRange, rangeInfo, rangeParams, timeFilter } from '../ch/range.ts';
+import {
+  parseBasis,
+  parseGroup,
+  SCATTER_LIMIT_DEFAULT,
+  SCATTER_LIMIT_MAX,
+  scatterQuery,
+  toScatterPoint,
+  type ScatterRow,
+} from '../ch/scatter.ts';
 import { DISPLAY_IP, filterSql, flowSource, parseBy, parseFilters, UNKNOWN_UID } from '../ch/sql.ts';
 import { alignRange, buildThroughput, parseDir, throughputQuery, type ThroughputRow } from '../ch/throughput.ts';
 import type { ClickHouseClient } from '../db/clickhouse.ts';
@@ -125,6 +134,31 @@ export function historyRoutes(app: FastifyInstance, deps: { clickhouse: ClickHou
     const { sql, params } = lifecycleQuery({ from, to, limit: limit + 1, names, uid });
     const rows = await chQuery<LifecycleRow>(ch, req.log, sql, params, clientGone(reply));
     return { from, to, procs: rows.slice(0, limit).map(toLifecycleProc), truncated: rows.length > limit };
+  });
+
+  /**
+   * tx vs rx scatter (08): per process instance (`group=instance`) or name,
+   * lifetime totals of the processes whose lifetime overlaps the range
+   * (`basis=lifetime`) or bytes within the range (`basis=range`), largest
+   * first; `limit` 1..5000 (default 2000). The page's filters keep the
+   * processes with matching traffic in the range.
+   */
+  app.get<RangeQuery>('/api/history/scatter', async (req, reply): Promise<ScatterResponse> => {
+    const range = parseRange(req.query);
+    const group = parseGroup(req.query.group);
+    const basis = parseBasis(req.query.basis);
+    const limit = intInRange(req.query.limit, 'limit', SCATTER_LIMIT_DEFAULT, 1, SCATTER_LIMIT_MAX);
+    const { sql, params } = scatterQuery({ range, group, basis, filters: parseFilters(req.query), limit: limit + 1 });
+    const rows = await chQuery<ScatterRow>(ch, req.log, sql, params, clientGone(reply));
+    return {
+      from: range.from,
+      to: range.to,
+      group,
+      basis,
+      table: range.table,
+      points: rows.slice(0, limit).map((r) => toScatterPoint(r, (uid) => users.name(uid))),
+      truncated: rows.length > limit,
+    };
   });
 
   /**

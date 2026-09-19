@@ -37,6 +37,8 @@ export const urls = {
   // `names` is comma-separated; omitted means the largest processes of any name.
   historyLifecycle: (r: TimeRange, p: { names?: readonly string[]; uid?: string; limit?: number } = {}) =>
     `/api/history/lifecycle?${qs({ from: r.from, to: r.to, names: p.names?.length ? p.names.join(',') : undefined, uid: p.uid, limit: p.limit })}`,
+  historyScatter: (r: TimeRange, p: { group: string; basis: string; filters: UrlFilters }) =>
+    `/api/history/scatter?${qs({ from: r.from, to: r.to, group: p.group, basis: p.basis, ...p.filters })}`,
 };
 
 export type { HistorySummary, ProcessInfo };

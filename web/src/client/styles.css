@@ -1013,3 +1013,16 @@ input:focus-visible {
   background: var(--bg);
   color: var(--text);
 }
+
+/* Sent vs received scatter (08): the brushed selection under the chart */
+.scatter-selection {
+  margin-top: 8px;
+}
+
+.scatter-selection-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 4px;
+  font-size: 12px;
+}

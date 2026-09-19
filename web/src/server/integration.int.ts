@@ -16,6 +16,7 @@ import type {
   LiveMeta,
   LiveSnapshotResponse,
   ProcessInfo,
+  ScatterResponse,
   ThroughputResponse,
 } from '../shared/api.ts';
 import { THROUGHPUT_OTHER } from '../shared/api.ts';
@@ -256,6 +257,70 @@ test('history lifecycle: processes whose first I/O or end is in range, largest f
 
   for (const q of ['limit=0', 'limit=1001', 'uid=x', `names=${Array.from({ length: 51 }, (_, i) => i).join(',')}`, 'from=5&to=4']) {
     assert.equal((await get(`/api/history/lifecycle?${q}`)).status, 400, q);
+  }
+});
+
+test('history scatter: per instance or name, lifetime or range, largest first, filters', async () => {
+  const now = Date.now();
+  const range = `from=${now - 7 * 86_400_000}&to=${now}`;
+  const check = (b: ScatterResponse, group: string, basis: string) => {
+    assert.equal(b.group, group);
+    assert.equal(b.basis, basis);
+    assert.equal(typeof b.truncated, 'boolean');
+    for (const p of b.points) {
+      assert.match(p.id, /^\d+:\d+$/);
+      assert.equal(p.id.split(':')[0], String(p.pid));
+      assert.ok(Number.isFinite(p.tx) && Number.isFinite(p.rx) && p.tx + p.rx > 0, p.id);
+      assert.ok(p.cmdline.length <= 300);
+      assert.ok(p.instances >= 1);
+      if (group === 'instance') assert.equal(p.instances, 1);
+      if (basis === 'lifetime') {
+        // Lifetime overlaps the range.
+        assert.ok(p.startMs !== null && p.startMs < b.to, p.id);
+        assert.ok(p.endedMs === null || p.endedMs >= b.from, p.id);
+      }
+    }
+    for (let i = 1; i < b.points.length; i++) assert.ok(b.points[i - 1]!.tx + b.points[i - 1]!.rx >= b.points[i]!.tx + b.points[i]!.rx, 'largest first');
+  };
+  const res: Record<string, ScatterResponse> = {};
+  for (const group of ['instance', 'name']) {
+    for (const basis of ['lifetime', 'range']) {
+      const r = await get<ScatterResponse>(`/api/history/scatter?${range}&group=${group}&basis=${basis}`);
+      assert.equal(r.status, 200, `${group}/${basis}`);
+      check(r.body, group, basis);
+      res[`${group}/${basis}`] = r.body;
+    }
+  }
+  // Per name: one point per name, instances add up to the instance points.
+  const byName = res['name/lifetime']!;
+  assert.equal(new Set(byName.points.map((p) => p.name)).size, byName.points.length);
+  if (!res['instance/lifetime']!.truncated && !byName.truncated) {
+    assert.equal(
+      byName.points.reduce((n, p) => n + p.instances, 0),
+      res['instance/lifetime']!.points.length,
+    );
+  }
+  const top = res['instance/range']!.points[0];
+  if (top) {
+    // The id opens the process page; the name filter keeps only that name.
+    const [pid, start] = top.id.split(':');
+    assert.equal((await get(`/api/process/${pid}/${start}`)).status, 200);
+    const named = await get<ScatterResponse>(`/api/history/scatter?${range}&name=${encodeURIComponent(top.name)}`);
+    assert.equal(named.status, 200);
+    assert.ok(named.body.points.length > 0);
+    for (const p of named.body.points) assert.equal(p.name, top.name);
+    const one = await get<ScatterResponse>(`/api/history/scatter?${range}&basis=range&limit=1`);
+    assert.equal(one.body.points.length, 1);
+    assert.equal(one.body.truncated, res['instance/range']!.points.length > 1);
+  }
+  const uid = await get<ScatterResponse>(`/api/history/scatter?${range}&basis=range&uid=0`);
+  assert.equal(uid.status, 200);
+  const none = await get<ScatterResponse>(`/api/history/scatter?${range}&name=no-such-proc`);
+  assert.deepEqual(none.body.points, []);
+  const empty = await get<ScatterResponse>(`/api/history/scatter?from=1000&to=2000&basis=range`);
+  assert.deepEqual(empty.body.points, []);
+  for (const q of ['group=uid', 'basis=total', 'limit=0', 'limit=5001', 'uid=x', 'from=5&to=4']) {
+    assert.equal((await get(`/api/history/scatter?${q}`)).status, 400, q);
   }
 });
 

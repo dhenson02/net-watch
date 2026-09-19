@@ -9,6 +9,7 @@ import { SegmentedControl } from '../components/SegmentedControl.tsx';
 import { parseEventsMode, type EventsMode } from '../history/clusterMarkers.ts';
 import { LifecycleTrack } from '../history/LifecycleTrack.tsx';
 import { ThroughputChart } from '../history/ThroughputChart.tsx';
+import { TxRxScatter } from '../history/TxRxScatter.tsx';
 import { BY_VALUES, filterParam } from '../history/throughputSeries.ts';
 import { useThroughputParams } from '../history/useThroughput.ts';
 import { useQuery } from '../hooks/useQuery.ts';
@@ -62,7 +63,7 @@ export function HistoryPage() {
               clear all
             </button>
           )}
-          <span className="muted">applies to the totals, the throughput chart and the flow diagram</span>
+          <span className="muted">applies to the totals, the throughput chart, the sent/received scatter and the flow diagram</span>
         </p>
       )}
       <div className="panels">
@@ -106,6 +107,8 @@ export function HistoryPage() {
             )
           }
         />
+
+        <TxRxScatter range={range} filters={filters} slots={slots} />
 
         <HistoryFlowSankey range={range} filters={filters} slots={slots} />
       </div>
