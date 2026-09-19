@@ -1,66 +1,19 @@
-import { useEffect, useMemo, useRef } from 'react';
-import type { CompactTick } from '../../shared/api.ts';
-import { EChart, useEChartRef } from '../charts/EChart.tsx';
-import type { EChartsCoreOption, EChartsType } from '../charts/echarts.ts';
+import { useMemo } from 'react';
 import { fmtDuration, fmtRate, fmtTime } from '../charts/format.ts';
-import { RX, TX } from '../charts/palette.ts';
-import { useColorScheme } from '../charts/useColorScheme.ts';
+import { useSlots } from '../charts/useSlots.ts';
 import { Panel } from '../components/Panel.tsx';
 import { useLive, type LiveStatus } from '../hooks/useLive.ts';
 import { useNow } from '../hooks/useNow.ts';
 import { HealthStrip } from '../live/HealthStrip.tsx';
+import { LiveThroughput } from '../live/LiveThroughput.tsx';
 import { Link } from '../router.ts';
-
-const WINDOW_S = 900;
-
-type Point = [number, number | null];
-
-/** Total tx above zero, rx below; a null point before each gap breaks the line. */
-function totals(ticks: CompactTick[]): { tx: Point[]; rx: Point[] } {
-  const tx: Point[] = [];
-  const rx: Point[] = [];
-  for (const t of ticks) {
-    if (t.gap && tx.length) {
-      tx.push([t.ts - 1, null]);
-      rx.push([t.ts - 1, null]);
-    }
-    tx.push([t.ts, t.txKbps]);
-    rx.push([t.ts, -t.rxKbps]);
-  }
-  return { tx, rx };
-}
 
 const STATUS_TEXT: Record<LiveStatus, string> = { connecting: 'connecting…', live: 'connected', reconnecting: 'reconnecting…' };
 
 export function LivePage() {
-  const live = useLive(WINDOW_S);
-  const scheme = useColorScheme();
+  const live = useLive(3600);
   const now = useNow(1000);
-  const chart = useEChartRef();
-
-  // Structure only; the data is pushed through the ref on each tick. It has
-  // no `data` key, so re-applying it (theme change) keeps the current data.
-  const option = useMemo<EChartsCoreOption>(
-    () => ({
-      grid: { left: 8, right: 16, top: 32, bottom: 8, containLabel: true },
-      legend: { top: 0, left: 0, data: ['tx', 'rx'] },
-      tooltip: { trigger: 'axis', valueFormatter: (v: number | null) => (v === null ? '—' : fmtRate(Math.abs(v))) },
-      xAxis: { type: 'time', splitLine: { show: false } },
-      yAxis: { type: 'value', axisLabel: { formatter: (v: number) => fmtRate(Math.abs(v)) } },
-      series: [
-        { id: 'tx', name: 'tx', type: 'line', color: TX[scheme], areaStyle: { opacity: 0.2 }, showSymbol: false, animation: false },
-        { id: 'rx', name: 'rx', type: 'line', color: RX[scheme], areaStyle: { opacity: 0.2 }, showSymbol: false, animation: false },
-      ],
-    }),
-    [scheme],
-  );
-
-  const data = useMemo(() => totals(live.ticks), [live.ticks]);
-  const latestData = useRef(data);
-  latestData.current = data;
-  const push = (c: EChartsType | null) =>
-    c?.setOption({ series: [{ id: 'tx', data: latestData.current.tx }, { id: 'rx', data: latestData.current.rx }] });
-  useEffect(() => push(chart.current), [data, chart]);
+  const slots = useSlots();
 
   const last = live.ticks.at(-1);
   const top = useMemo(() => [...(last?.procs ?? [])].sort((a, b) => b.tx + b.rx - (a.tx + a.rx)).slice(0, 8), [last]);
@@ -72,16 +25,7 @@ export function LivePage() {
       <h1>Live</h1>
       <HealthStrip />
       <div className="panels">
-        <Panel
-          title="Throughput"
-          subtitle={`All processes, last ${WINDOW_S / 60} min · tx above zero, rx below`}
-          wide
-          loading={live.status !== 'live' && !live.ticks.length}
-          error={live.error}
-          empty={live.status === 'live' && !live.ticks.length ? 'No ticks yet. Is the collector running?' : undefined}
-        >
-          <EChart option={option} chartRef={chart} onInit={push} height={260} ariaLabel="Total throughput, tx above zero and rx below" />
-        </Panel>
+        <LiveThroughput slots={slots} />
 
         <Panel title="Feed" footnote={null}>
           <dl className="facts">

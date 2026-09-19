@@ -6,6 +6,7 @@ import { BarChart, LineChart } from 'echarts/charts';
 import {
   AriaComponent,
   DataZoomComponent,
+  GraphicComponent,
   GridComponent,
   LegendComponent,
   MarkAreaComponent,
@@ -19,6 +20,7 @@ echarts.use([
   BarChart,
   AriaComponent,
   DataZoomComponent,
+  GraphicComponent,
   GridComponent,
   LegendComponent,
   MarkAreaComponent,

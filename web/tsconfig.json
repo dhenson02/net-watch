@@ -16,5 +16,7 @@
     "noUnusedParameters": true,
     "skipLibCheck": true
   },
-  "include": ["src/client", "src/shared"]
+  "include": ["src/client", "src/shared"],
+  // Unit tests run under node --test; tsconfig.server.json checks them.
+  "exclude": ["src/client/**/*.test.ts"]
 }

@@ -666,3 +666,101 @@ input:focus-visible {
   font-size: 11px;
   overflow-wrap: anywhere;
 }
+
+/* Small standalone button (pause) */
+.btn {
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.btn:hover {
+  color: var(--text);
+}
+
+.btn.active {
+  color: var(--text);
+  border-color: var(--warn);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Chart with a status overlay (stale, paused) */
+.chart-wrap {
+  position: relative;
+}
+
+.chart-overlay {
+  position: absolute;
+  top: 36px;
+  right: 20px;
+  padding: 3px 8px;
+  border: 1px solid var(--warn);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--warn);
+  font-size: 12px;
+  font-weight: 500;
+  pointer-events: none;
+}
+
+.chart-overlay-quiet {
+  border-color: var(--border);
+  color: var(--muted);
+}
+
+/* ECharts axis tooltip for stacked charts */
+.tip {
+  min-width: 180px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.tip-time {
+  margin-bottom: 2px;
+  color: var(--muted);
+}
+
+.tip-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 4px;
+  font-weight: 600;
+}
+
+.tip-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tip-swatch {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+
+.tip-name {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tip-num {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}

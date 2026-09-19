@@ -71,6 +71,11 @@ export class SlotAssigner {
     return out;
   }
 
+  /** Frees the slots of `names` now, e.g. when a chart switches what its series stand for. */
+  release(names: Iterable<string>): void {
+    for (const name of names) this.#slots.delete(name);
+  }
+
   slot(name: string): number {
     return this.#slots.get(name)?.slot ?? -1;
   }

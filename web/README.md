@@ -33,7 +33,7 @@ http://localhost:8787.
 ```sh
 npm run dev         # API on :8787 (node --watch) + Vite on :5173 with HMR
 npm run typecheck   # client and server tsconfigs
-npm test            # server unit tests (node --test)
+npm test            # unit tests (node --test): server, plus pure client modules (src/client/**/*.test.ts)
 npm run test:int    # every endpoint against the compose stack (needs `docker compose up -d --wait`)
 ```
 
@@ -96,13 +96,13 @@ src/client/    React SPA (Vite root)
   router.ts    usePath / navigate / useSearchParam / Link; all page state is in the URL
   pages/       Live, History, Process
   charts/      ECharts registration, <EChart>, palette, formatters, themes
-  live/        Live page sections (HealthStrip)
+  live/        Live page sections (HealthStrip, LiveThroughput + its pure series builder useLiveThroughput)
   components/  Panel, StatTile, Sparkline (inline SVG), RangePicker, SegmentedControl, Toggle, StatusPill
   hooks/       useQuery (fetch + abort + stale-while-revalidate), usePoll, useLive, useNow, useTimeRange
 src/shared/    API response types, imported by both sides
 ```
 
-Routes: `/` → `/live`, `/history?from&to`, `/process/:pid/:start`.
+Routes: `/` → `/live` (`?live_win=5m|15m|max&live_by=name|id`), `/history?from&to`, `/process/:pid/:start`.
 
 Conventions:
 
