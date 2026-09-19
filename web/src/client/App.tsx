@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import { StatusPill } from './components/StatusPill.tsx';
 import { DestinationsPage } from './pages/DestinationsPage.tsx';
 import { HistoryPage } from './pages/HistoryPage.tsx';
@@ -37,6 +37,18 @@ function NotFound() {
 export function App() {
   const health = useHealth();
   const path = usePath();
+  const topbar = useRef<HTMLElement>(null);
+
+  // The page header sticks just below the top bar, which wraps on narrow screens.
+  useEffect(() => {
+    const el = topbar.current;
+    if (!el) return;
+    const set = () => document.documentElement.style.setProperty('--topbar-h', `${el.offsetHeight}px`);
+    set();
+    const ro = new ResizeObserver(set);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   useEffect(() => {
     if (path === '/') navigate('/live', { replace: true });
@@ -44,7 +56,7 @@ export function App() {
 
   return (
     <div className="app">
-      <header className="topbar">
+      <header className="topbar" ref={topbar}>
         <div className="topbar-left">
           <div className="brand">
             <svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true">
