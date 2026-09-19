@@ -6,8 +6,9 @@
 // Series ids follow one scheme, which the tooltip relies on:
 //   `${stack}:${key}`  a band (stack is tx, rx or sum)
 //   `total:${stack}`   the stack's total line
-// Anything else (an overlay's series, e.g. `ghost:tx`) is listed after the
-// sections with its series name.
+// Anything else (an overlay's series) is listed after the sections with its
+// series name, unless `omit` names its id prefix (11's ghost lines, whose rows
+// `sectionRows` puts inside each section instead).
 import type { EChartsCoreOption } from './echarts.ts';
 import { fmtRate, fmtTime } from './format.ts';
 
@@ -23,7 +24,7 @@ const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
 
 type TipParam = { seriesId: string; seriesName: string; value: [number, number | null]; color: string };
 
-const tipRow = (color: string, name: string, value: string) =>
+export const tipRow = (color: string, name: string, value: string) =>
   `<div class="tip-row"><span class="tip-swatch" style="background:${color}"></span>` +
   `<span class="tip-name">${esc(name)}</span><span class="tip-num">${value}</span></div>`;
 
@@ -34,7 +35,17 @@ const STACK_OF = /^(tx|rx|sum):/;
  * one section per stack with its total and its bands, largest first, zero
  * rows left out; then any other series.
  */
-export function stackTooltip(stacks: readonly Stack[], opts: { timeStyle?: 'time' | 'datetime'; note?: string } = {}) {
+export function stackTooltip(
+  stacks: readonly Stack[],
+  opts: {
+    timeStyle?: 'time' | 'datetime';
+    note?: string;
+    /** Extra rows (tipRow HTML) under a section's total, before its bands. */
+    sectionRows?: (stack: Stack, ts: number, total: number | null) => string;
+    /** Series id prefix left out of the rows after the sections. */
+    omit?: string;
+  } = {},
+) {
   return (params: TipParam[]): string => {
     const ts = params[0]?.value[0];
     if (ts === undefined) return '';
@@ -46,10 +57,12 @@ export function stackTooltip(stacks: readonly Stack[], opts: { timeStyle?: 'time
         .join('');
       const v = params.find((p) => p.seriesId === `total:${stack}`)?.value[1];
       const total = v === null || v === undefined ? '—' : fmtRate(Math.abs(v));
-      return `<div class="tip-head"><span>${STACK_LABEL[stack]}</span><span class="tip-num">${total}</span></div>${rows}`;
+      const more = opts.sectionRows?.(stack, ts, v ?? null) ?? '';
+      return `<div class="tip-head"><span>${STACK_LABEL[stack]}</span><span class="tip-num">${total}</span></div>${more}${rows}`;
     };
+    const omitted = (id: string) => opts.omit !== undefined && id.startsWith(opts.omit);
     const extra = params
-      .filter((p) => !STACK_OF.test(p.seriesId) && !p.seriesId.startsWith('total:') && p.value[1] !== null && p.value[1] !== undefined)
+      .filter((p) => !STACK_OF.test(p.seriesId) && !p.seriesId.startsWith('total:') && !omitted(p.seriesId) && p.value[1] !== null && p.value[1] !== undefined)
       .map((p) => tipRow(p.color, p.seriesName, fmtRate(Math.abs(p.value[1]!))))
       .join('');
     const note = opts.note ? ` <span class="muted">${esc(opts.note)}</span>` : '';

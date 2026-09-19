@@ -1,17 +1,18 @@
 import { useEffect, useMemo, useRef, type ReactNode, type RefObject } from 'react';
-import { THROUGHPUT_OTHER, type ThroughputBy, type ThroughputDir } from '../../shared/api.ts';
+import { THROUGHPUT_OTHER, type CompareOffset, type ThroughputBy, type ThroughputCompare, type ThroughputDir } from '../../shared/api.ts';
 import type { TimeRange } from '../api.ts';
 import { EChart, useEChartRef } from '../charts/EChart.tsx';
 import type { EChartsCoreOption, EChartsType } from '../charts/echarts.ts';
-import { fmtDuration } from '../charts/format.ts';
+import { fmtDuration, fmtRate, fmtTime } from '../charts/format.ts';
 import { cssVar } from '../charts/cssVar.ts';
-import { bandSeries, mirroredStackOption, stackTooltip, totalSeries } from '../charts/mirroredStack.ts';
+import { bandSeries, mirroredStackOption, stackTooltip, tipRow, totalSeries } from '../charts/mirroredStack.ts';
 import type { SlotAssigner } from '../charts/palette.ts';
 import { useColorScheme } from '../charts/useColorScheme.ts';
 import { useSlots } from '../charts/useSlots.ts';
 import { Panel } from '../components/Panel.tsx';
 import { SegmentedControl } from '../components/SegmentedControl.tsx';
-import { setSearchParams } from '../router.ts';
+import { setSearchParams, useSearch } from '../router.ts';
+import { COMPARE_NOUN, deviationRuns, GHOST_ID, ghostAt, ghostSeries, ghostText, parseCompareParam } from './ghost.ts';
 import { bandColors, buildSeries, drillDown, TOP_DEFAULT, type HistorySeries } from './throughputSeries.ts';
 import { useThroughput, useThroughputParams } from './useThroughput.ts';
 
@@ -33,6 +34,11 @@ const TOP_OPTIONS = [
   { value: '8', label: '8' },
   { value: '12', label: '12' },
   { value: '20', label: '20' },
+] as const;
+const COMPARE_OPTIONS = [
+  { value: 'off', label: 'off' },
+  { value: '1d', label: '1 day', title: 'Dashed line: the same time one day earlier' },
+  { value: '1w', label: '1 week', title: 'Dashed line: the same time one week earlier' },
 ] as const;
 
 const BY_NOUN: Record<ThroughputBy, string> = { app: 'apps', name: 'processes', proto: 'protocols', uid: 'users', dest: 'destinations' };
@@ -74,12 +80,15 @@ type Props = {
  * `by`, `dir`, `top`, `filter.*`). Zooming (slider, ctrl+wheel) or brushing
  * the plot writes the new range to the URL, which re-queries at a finer step;
  * double-clicking a legend item filters to it and drills into the next
- * dimension.
+ * dimension. `compare=1d|1w` (11) draws the same window that long before as
+ * a dashed ghost behind the stack.
  */
 export function ThroughputChart({ range, slots, overlays, actions, chartRef, below }: Props) {
   const p = useThroughputParams();
+  const search = useSearch();
+  const compare = useMemo(() => parseCompareParam(search), [search]);
   const ownSlots = useSlots();
-  const q = useThroughput(range, p, slots, ownSlots);
+  const q = useThroughput(range, p, slots, ownSlots, compare);
   const scheme = useColorScheme();
   const ownChart = useEChartRef();
   const chart = chartRef ?? ownChart;
@@ -90,6 +99,21 @@ export function ThroughputChart({ range, slots, overlays, actions, chartRef, bel
     return buildSeries(d, p.dir, bandColors(d.keys, q.slotOf, scheme));
   }, [d, p.dir, q.slotOf, scheme]);
 
+  // 11: the earlier window as dashed lines behind the stack, with the runs
+  // where now is well above it shaded. Hidden at once when switched off.
+  const ghost: ThroughputCompare | null = (compare && d?.compare) || null;
+  const noun = compare ? COMPARE_NOUN[compare] : '';
+  const ghostSeriesList = useMemo(() => {
+    if (!ghost || !series || !d) return [];
+    const areas = deviationRuns(series.totals, series.stacks, ghost, d.step * 1000);
+    return ghostSeries(ghost, p.dir, cssVar('--muted'), `same time ${noun}`, areas);
+    // scheme re-reads the muted color.
+  }, [ghost, series, d, p.dir, noun, scheme]);
+  const allOverlays = useMemo(() => [...ghostSeriesList, ...(overlays ?? [])], [ghostSeriesList, overlays]);
+  // The tooltip reads the ghost at the hovered time from here, so the option needn't change with it.
+  const ghostTip = useRef<{ c: ThroughputCompare; noun: string } | null>(null);
+  ghostTip.current = ghost && { c: ghost, noun };
+
   const stacksKey = series?.stacks.join() ?? (p.dir === 'both' ? 'tx,rx' : p.dir);
   const step = d?.step ?? 60;
   const option = useMemo<EChartsCoreOption>(() => {
@@ -98,7 +122,15 @@ export function ThroughputChart({ range, slots, overlays, actions, chartRef, bel
     return mirroredStackOption({
       stacks: stacks as HistorySeries['stacks'],
       muted,
-      tooltip: stackTooltip(stacks as HistorySeries['stacks'], { timeStyle: step < 60 ? 'time' : 'datetime', note: `${fmtDuration(step * 1000)} mean` }),
+      tooltip: stackTooltip(stacks as HistorySeries['stacks'], {
+        timeStyle: step < 60 ? 'time' : 'datetime',
+        note: `${fmtDuration(step * 1000)} mean`,
+        omit: GHOST_ID,
+        sectionRows: (stack, ts, total) => {
+          const g = ghostTip.current;
+          return g ? tipRow(muted, `same time ${g.noun}`, ghostText(total, ghostAt(g.c, stack, ts), fmtRate)) : '';
+        },
+      }),
       grid: GRID,
       extra: {
         dataZoom: [
@@ -120,8 +152,8 @@ export function ThroughputChart({ range, slots, overlays, actions, chartRef, bel
   }, [stacksKey, step, scheme]);
 
   // What the event handlers need, without re-binding them.
-  const latest = useRef({ series, range, p, overlays });
-  latest.current = { series, range, p, overlays };
+  const latest = useRef({ series, range, p, overlays: allOverlays });
+  latest.current = { series, range, p, overlays: allOverlays };
   const pushedData = useRef<HistorySeries | null>(null);
   const zoomTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const lastLegend = useRef<{ name: string; at: number } | null>(null);
@@ -196,10 +228,19 @@ export function ThroughputChart({ range, slots, overlays, actions, chartRef, bel
       set(patch);
     });
   };
-  useEffect(() => push(chart.current), [series, overlays, range.from, range.to, chart]);
+  useEffect(() => push(chart.current), [series, allOverlays, range.from, range.to, chart]);
   useEffect(() => () => clearTimeout(zoomTimer.current), []);
 
-  const noun = BY_NOUN[p.by];
+  const byNoun = BY_NOUN[p.by];
+  // Ghost status for the header: none at all, or only from some point on.
+  const ghostNote =
+    compare && d && !q.stale
+      ? d.compare === null
+        ? `no data for ${noun}`
+        : d.compare && d.compare.since > d.compare.t[0]!
+          ? `${noun}: no data before ${fmtTime(d.compare.since - d.compare.offset, 'datetime')}`
+          : ''
+      : '';
   const source = d ? `${fmtDuration(d.step * 1000)} buckets from ${d.table === 'flows' ? 'raw flows' : 'the per-minute rollup'}` : '';
   const empty = d && !q.stale && !d.keys.length ? 'No traffic in this range.' : undefined;
   const topKeys = useMemo(() => (d && !q.stale ? d.keys.filter((k) => k !== THROUGHPUT_OTHER) : null), [d, q.stale]);
@@ -209,7 +250,7 @@ export function ThroughputChart({ range, slots, overlays, actions, chartRef, bel
       title="Throughput"
       subtitle={
         <>
-          Top {p.top} {noun} + other{source && ` · ${source}`} · drag across the plot or use the slider to zoom (Back zooms out) · double-click a
+          Top {p.top} {byNoun} + other{source && ` · ${source}`} · drag across the plot or use the slider to zoom (Back zooms out) · double-click a
           legend item to drill into it
         </>
       }
@@ -227,6 +268,16 @@ export function ThroughputChart({ range, slots, overlays, actions, chartRef, bel
             value={String(p.top) as (typeof TOP_OPTIONS)[number]['value']}
             onChange={(v) => set({ top: Number(v) === TOP_DEFAULT ? null : v })}
           />
+          <span className="ctl-group">
+            <span className="ctl-label">compare</span>
+            <SegmentedControl<'off' | CompareOffset>
+              label="Compare with the same time earlier"
+              options={COMPARE_OPTIONS}
+              value={compare ?? 'off'}
+              onChange={(v) => set({ compare: v === 'off' ? null : v })}
+            />
+            {ghostNote && <span className="ctl-note">{ghostNote}</span>}
+          </span>
           {actions}
         </>
       }
@@ -238,7 +289,7 @@ export function ThroughputChart({ range, slots, overlays, actions, chartRef, bel
           onInit={onInit}
           group="history"
           height={360}
-          ariaLabel={`Throughput by ${noun}, ${p.dir === 'both' ? 'sent stacked above zero and received below' : 'stacked'}`}
+          ariaLabel={`Throughput by ${byNoun}, ${p.dir === 'both' ? 'sent stacked above zero and received below' : 'stacked'}`}
         />
       </div>
       {below?.({ topKeys })}

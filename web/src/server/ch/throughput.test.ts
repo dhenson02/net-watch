@@ -2,7 +2,18 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { THROUGHPUT_OTHER } from '../../shared/api.ts';
 import type { Range } from './range.ts';
-import { alignRange, buildThroughput, kbps, parseDir, throughputQuery, type ThroughputRow } from './throughput.ts';
+import {
+  alignRange,
+  buildCompare,
+  buildThroughput,
+  compareQuery,
+  compareStep,
+  kbps,
+  parseCompare,
+  parseDir,
+  throughputQuery,
+  type ThroughputRow,
+} from './throughput.ts';
 
 const T0 = Date.UTC(2026, 8, 18, 12); // on every step boundary used here
 const S = 1000;
@@ -95,4 +106,73 @@ test('throughputQuery: uid on the rollup joins processes; raw flows has the colu
   assert.match(throughputQuery(long, 'app', 'both', 8, { uid: 1000 }).sql, /LEFT JOIN/);
   assert.doesNotMatch(throughputQuery(long, 'app', 'both', 8, {}).sql, /JOIN/);
   assert.doesNotMatch(throughputQuery(raw(T0, T0 + 3600 * S, 10), 'uid', 'both', 8, {}).sql, /JOIN/);
+});
+
+// ---------------------------------------------------------------------------
+// compare (11)
+
+const DAY = 86_400_000;
+const WEEK = 7 * DAY;
+const crow = (tMs: number, tx: number, rx: number) => ({ t: tMs / 1000, tx: String(tx), rx: String(rx) });
+
+test('parseCompare: 1d or 1w, default off', () => {
+  assert.equal(parseCompare(undefined), null);
+  assert.equal(parseCompare(''), null);
+  assert.equal(parseCompare('1d'), '1d');
+  assert.equal(parseCompare('1w'), '1w');
+  for (const bad of ['2w', '1W', 'toString', ['1d']]) assert.throws(() => parseCompare(bad), (e: Error & { statusCode?: number }) => e.statusCode === 400);
+});
+
+test('compareStep: whole minutes, at least one', () => {
+  assert.equal(compareStep(raw(T0, T0 + 3600 * S, 5)), 60);
+  assert.equal(compareStep(rollup(T0, T0 + DAY, 60)), 60);
+  assert.equal(compareStep(rollup(T0, T0 + 30 * DAY, 1800)), 1800);
+});
+
+test('compareQuery: flows_1m over the shifted window, totals only, bucketed after the shift', () => {
+  const r = raw(T0 + 30 * S, T0 + 3600 * S, 10);
+  const q = compareQuery(r, WEEK, { app: "x' OR 1=1 --" });
+  assert.match(q.sql, /FROM flows_1m\s/);
+  assert.doesNotMatch(q.sql, /JOIN|key|GROUP BY t,/);
+  assert.match(q.sql, /toStartOfInterval\(minute \+ INTERVAL \{offset_s:UInt32\} SECOND, INTERVAL \{g_step:UInt32\} SECOND\)/);
+  assert.ok(!q.sql.includes("x' OR"));
+  // from rounded down to the ghost's minute step, then shifted back
+  assert.deepEqual(q.params, { f_app: "x' OR 1=1 --", g_from: T0 - WEEK, g_to: T0 + 3600 * S - WEEK, g_step: 60, offset_s: 604800 });
+  // uid needs the processes join, even when the range itself reads raw flows
+  assert.match(compareQuery(r, DAY, { uid: 1000 }).sql, /LEFT JOIN .*FROM processes.*g_from/s);
+});
+
+test('buildCompare: null when the whole earlier window predates the data', () => {
+  const r = rollup(T0, T0 + 3 * 3600 * S, 60);
+  assert.equal(buildCompare([], r, WEEK, null), null);
+  assert.equal(buildCompare([], r, WEEK, T0 + 3 * 3600 * S - WEEK), null); // first minute == window end
+  assert.equal(buildCompare([], r, DAY, T0 - DAY + 3600 * S)?.since, T0 + 3600 * S);
+});
+
+test('buildCompare: zero-filled kbps per shifted bucket', () => {
+  const r = rollup(T0, T0 + 5 * 60 * S, 60);
+  const c = buildCompare([crow(T0 + 60 * S, 7500, 750), crow(T0 + 60 * S, 7500, 0), crow(T0 + 600 * S, 1, 1)], r, DAY, T0 - 30 * DAY)!;
+  assert.deepEqual(
+    c.t,
+    [0, 1, 2, 3, 4].map((i) => T0 + i * 60 * S),
+  );
+  assert.deepEqual(c.tx, [0, 2, 0, 0, 0]); // 15 kB over 60 s = 2 kbps
+  assert.deepEqual(c.rx, [0, 0.1, 0, 0, 0]);
+  assert.deepEqual([c.offset, c.step, c.since], [DAY, 60, T0]);
+});
+
+test('buildCompare: null before the first minute, a partly covered bucket divided by its covered part', () => {
+  const r = rollup(T0, T0 + 3600 * S, 900); // 15 min buckets
+  // data starts 20 min into the earlier window: bucket 0 null, bucket 1 covers 10 of 15 min
+  const c = buildCompare([crow(T0 + 1200 * S, 75_000, 0), crow(T0 + 1800 * S, 90_000, 0)], r, WEEK, T0 - WEEK + 1200 * S)!;
+  assert.equal(c.since, T0 + 1200 * S);
+  assert.deepEqual(c.tx, [null, kbps(75_000, 600), kbps(90_000, 900), 0]);
+  assert.deepEqual(c.rx, [null, 0, 0, 0]);
+});
+
+test('buildCompare: a raw range gets minute buckets, the last one whole (minute rows)', () => {
+  const r = raw(T0, T0 + 150 * S, 5);
+  const c = buildCompare([crow(T0 + 120 * S, 3750, 0)], r, DAY, 0)!;
+  assert.equal(c.t.length, 3);
+  assert.equal(c.tx[2], kbps(3750, 60));
 });

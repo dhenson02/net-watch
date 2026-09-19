@@ -1,5 +1,13 @@
 import type { FastifyInstance } from 'fastify';
-import type { HistoryFlowsResponse, HistoryIngest, HistorySummary, LifecycleResponse, ScatterResponse, ThroughputResponse } from '../../shared/api.ts';
+import {
+  COMPARE_OFFSET_MS,
+  type HistoryFlowsResponse,
+  type HistoryIngest,
+  type HistorySummary,
+  type LifecycleResponse,
+  type ScatterResponse,
+  type ThroughputResponse,
+} from '../../shared/api.ts';
 import { LIFECYCLE_LIMIT_DEFAULT, LIFECYCLE_LIMIT_MAX, lifecycleQuery, parseNames, toLifecycleProc, type LifecycleRow } from '../ch/lifecycle.ts';
 import { chQuery, clientGone } from '../ch/query.ts';
 import { parseRange, rangeInfo, rangeParams, timeFilter } from '../ch/range.ts';
@@ -13,7 +21,18 @@ import {
   type ScatterRow,
 } from '../ch/scatter.ts';
 import { DISPLAY_IP, filterSql, flowSource, parseBy, parseFilters, UNKNOWN_UID } from '../ch/sql.ts';
-import { alignRange, buildThroughput, parseDir, throughputQuery, type ThroughputRow } from '../ch/throughput.ts';
+import {
+  alignRange,
+  buildCompare,
+  buildThroughput,
+  compareQuery,
+  FIRST_MINUTE_SQL,
+  parseCompare,
+  parseDir,
+  throughputQuery,
+  type CompareRow,
+  type ThroughputRow,
+} from '../ch/throughput.ts';
 import type { ClickHouseClient } from '../db/clickhouse.ts';
 import { badRequest } from '../http-error.ts';
 import type { Users } from '../users.ts';
@@ -100,15 +119,27 @@ export function historyRoutes(app: FastifyInstance, deps: { clickhouse: ClickHou
   /**
    * Throughput over a range stacked by one dimension (05): kbps per bucket for
    * the top N keys plus the rest, zero-padded. `from` is rounded down to a
-   * bucket start. Filters: name, app, proto, uid, dest (exact).
+   * bucket start. Filters: name, app, proto, uid, dest (exact). `compare=1d|1w`
+   * adds the same window that long before, totals only (11).
    */
   app.get<RangeQuery>('/api/history/throughput', async (req, reply): Promise<ThroughputResponse> => {
     const r = alignRange(parseRange(req.query));
     const by = parseBy(req.query.by);
     const dir = parseDir(req.query.dir);
     const top = intInRange(req.query.top, 'top', 8, 5, 20);
-    const { sql, params } = throughputQuery(r, by, dir, top, parseFilters(req.query));
-    const rows = await chQuery<ThroughputRow>(ch, req.log, sql, params, clientGone(reply));
+    const compare = parseCompare(req.query.compare);
+    const filters = parseFilters(req.query);
+    const { sql, params } = throughputQuery(r, by, dir, top, filters);
+    const gone = clientGone(reply);
+    const offset = compare ? COMPARE_OFFSET_MS[compare] : 0;
+    const ghost = offset ? compareQuery(r, offset, filters) : null;
+    // The ghost (11) runs alongside: totals of the earlier window, and the
+    // table's first minute, to tell "no data back then" from "no traffic".
+    const [rows, ghostRows, first] = await Promise.all([
+      chQuery<ThroughputRow>(ch, req.log, sql, params, gone),
+      ghost && chQuery<CompareRow>(ch, req.log, ghost.sql, ghost.params, gone),
+      ghost && chQuery<{ first: number }>(ch, req.log, FIRST_MINUTE_SQL, {}, gone),
+    ]);
     const labels: Record<string, string> = {};
     if (by === 'uid') {
       for (const { key } of rows) {
@@ -118,7 +149,9 @@ export function historyRoutes(app: FastifyInstance, deps: { clickhouse: ClickHou
         if (user) labels[key] = uid === UNKNOWN_UID ? user : `${user} (${key})`;
       }
     }
-    return buildThroughput(rows, r, dir, labels);
+    const out = buildThroughput(rows, r, dir, labels);
+    if (ghostRows && first) out.compare = buildCompare(ghostRows, r, offset, first[0] ? Number(first[0].first) * 1000 : null);
+    return out;
   });
 
   /**

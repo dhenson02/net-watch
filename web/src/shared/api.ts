@@ -260,6 +260,34 @@ export interface ThroughputResponse {
   /** kbps, aligned with `t`. A bucket cut short by `to` is divided by the time it covers. */
   tx: Record<string, number[]>;
   rx: Record<string, number[]>;
+  /**
+   * Present when `compare` was requested (11): the same window one day or
+   * week earlier, totals only, shifted forward onto this range's times. Null
+   * when the earlier window predates all the data.
+   */
+  compare?: ThroughputCompare | null;
+}
+
+/** `compare=` values: the offset of the ghost window. */
+export type CompareOffset = '1d' | '1w';
+export const COMPARE_OFFSET_MS: Record<CompareOffset, number> = { '1d': 86_400_000, '1w': 7 * 86_400_000 };
+
+/** The earlier window of a throughput answer, always from `flows_1m`. */
+export interface ThroughputCompare {
+  /** How far back it was taken, ms. `t` is already shifted forward by it. */
+  offset: number;
+  /** Bucket width in seconds, a whole number of minutes (may differ from the answer's). */
+  step: number;
+  /**
+   * Shifted time the earlier data starts at: the window's start, or later
+   * when the table's data begins inside it. Buckets before it are null.
+   */
+  since: number;
+  /** Shifted bucket starts (ms), every bucket present. */
+  t: number[];
+  /** kbps totals over every key, aligned with `t`; null before `since`. */
+  tx: (number | null)[];
+  rx: (number | null)[];
 }
 
 // ---------------------------------------------------------------------------

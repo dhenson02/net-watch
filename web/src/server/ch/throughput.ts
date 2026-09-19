@@ -1,7 +1,15 @@
 // History throughput (05): the two-pass top-N query and the conversion of its
 // rows into zero-padded, column-oriented kbps series. Pure, so node --test
 // covers it; the route only runs the query.
-import { THROUGHPUT_OTHER, type ThroughputBy, type ThroughputDir, type ThroughputResponse } from '../../shared/api.ts';
+import {
+  COMPARE_OFFSET_MS,
+  THROUGHPUT_OTHER,
+  type CompareOffset,
+  type ThroughputBy,
+  type ThroughputCompare,
+  type ThroughputDir,
+  type ThroughputResponse,
+} from '../../shared/api.ts';
 import { badRequest } from '../http-error.ts';
 import { bucketSeconds, rangeParams, timeFilter, type Range } from './range.ts';
 import { BY_COLUMNS, filterSql, flowSource, type Filters } from './sql.ts';
@@ -120,4 +128,70 @@ export function buildThroughput(rows: readonly ThroughputRow[], r: Range, dir: T
     if (labels[k] !== undefined) out.labels[k] = labels[k]!;
   }
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// Week-over-week ghost (11): the same window one day or week earlier
+
+export function parseCompare(raw: unknown): CompareOffset | null {
+  if (raw === undefined || raw === '') return null;
+  if (typeof raw === 'string' && Object.hasOwn(COMPARE_OFFSET_MS, raw)) return raw as CompareOffset;
+  throw badRequest(`compare: expected one of ${Object.keys(COMPARE_OFFSET_MS).join(', ')}`);
+}
+
+/** The earlier window's bucket width: `flows_1m` rows are whole minutes, so at least 60 s. */
+export const compareStep = (r: Range) => Math.max(60, Math.ceil(r.step / 60) * 60);
+
+/**
+ * Totals (no per-key split) over `[from - offset, to - offset)` from
+ * `flows_1m`, whatever table the range reads, bucketed after shifting forward
+ * by `offset`, so its buckets line up with the range's. `from` is rounded down
+ * to the ghost's step. Filters apply as to the main query.
+ */
+export function compareQuery(r: Range, offsetMs: number, filters: Filters): { sql: string; params: Record<string, unknown> } {
+  const step = compareStep(r);
+  const from = Math.floor(r.from / (step * 1000)) * step * 1000;
+  const time = 'minute >= toDateTime(intDiv({g_from:Int64}, 1000)) AND minute < toDateTime(intDiv({g_to:Int64}, 1000))';
+  const src = flowSource('flows_1m', time, filters.uid !== undefined);
+  const f = filterSql(filters);
+  const sql = `SELECT toUnixTimestamp(toStartOfInterval(minute + INTERVAL {offset_s:UInt32} SECOND, INTERVAL {g_step:UInt32} SECOND)) AS t,
+           sum(tx_bytes) AS tx, sum(rx_bytes) AS rx
+    FROM ${src}
+    WHERE ${time}${f.sql}
+    GROUP BY t
+    ORDER BY t`;
+  return { sql, params: { ...f.params, g_from: from - offsetMs, g_to: r.to - offsetMs, g_step: step, offset_s: offsetMs / 1000 } };
+}
+
+/** The first minute `flows_1m` holds (read in key order, so it stops after the first granule). */
+export const FIRST_MINUTE_SQL = 'SELECT toUnixTimestamp(minute) AS first FROM flows_1m ORDER BY minute LIMIT 1';
+
+export type CompareRow = { t: number; tx: string | number; rx: string | number };
+
+/**
+ * Rows → the ghost: kbps per shifted bucket, zero-filled, with the buckets
+ * before the table's first minute (`firstMs`, shifted) null and a bucket
+ * partly before it divided by the time it covers. Null when the whole earlier
+ * window predates the data (or there is none).
+ */
+export function buildCompare(rows: readonly CompareRow[], r: Range, offsetMs: number, firstMs: number | null): ThroughputCompare | null {
+  if (firstMs === null || firstMs >= r.to - offsetMs) return null;
+  const step = compareStep(r);
+  const stepMs = step * 1000;
+  const from = Math.floor(r.from / stepMs) * stepMs;
+  const n = Math.max(1, Math.ceil((r.to - from) / stepMs));
+  const since = Math.max(from, firstMs + offsetMs);
+  const dataEnd = Math.ceil(r.to / 60_000) * 60_000;
+  const tx = new Array<number>(n).fill(0);
+  const rx = new Array<number>(n).fill(0);
+  for (const row of rows) {
+    const i = Math.round((row.t * 1000 - from) / stepMs);
+    if (i < 0 || i >= n) continue;
+    tx[i]! += Number(row.tx);
+    rx[i]! += Number(row.rx);
+  }
+  const t = Array.from({ length: n }, (_, i) => from + i * stepMs);
+  const seconds = t.map((start) => (Math.min(start + stepMs, Math.max(dataEnd, start)) - Math.max(start, since)) / 1000);
+  const rate = (bytes: number[]) => bytes.map((b, i) => (t[i]! + stepMs <= since ? null : kbps(b, Math.max(0, seconds[i]!))));
+  return { offset: offsetMs, step, since, t, tx: rate(tx), rx: rate(rx) };
 }

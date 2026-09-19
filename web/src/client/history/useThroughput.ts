@@ -1,7 +1,7 @@
 // History throughput (05): URL state and the query. The pure logic is in
 // throughputSeries.ts.
 import { useMemo, useRef } from 'react';
-import { THROUGHPUT_OTHER, type ThroughputBy, type ThroughputResponse } from '../../shared/api.ts';
+import { THROUGHPUT_OTHER, type CompareOffset, type ThroughputBy, type ThroughputResponse } from '../../shared/api.ts';
 import { urls, type TimeRange } from '../api.ts';
 import type { SlotAssigner } from '../charts/palette.ts';
 import { useQuery, type QueryState } from '../hooks/useQuery.ts';
@@ -23,8 +23,9 @@ export function useThroughput(
   p: ThroughputParams,
   pageSlots: SlotAssigner,
   ownSlots: SlotAssigner,
+  compare: CompareOffset | null = null,
 ): QueryState<ThroughputResponse> & { slotOf: Map<string, number> } {
-  const q = useQuery<ThroughputResponse>(urls.historyThroughput(range, p));
+  const q = useQuery<ThroughputResponse>(urls.historyThroughput(range, p, compare));
   const owned = useRef<{ by: ThroughputBy; keys: Set<string> }>({ by: p.by, keys: new Set() });
   const last = useRef(new Map<string, number>());
   const slotOf = useMemo(() => {

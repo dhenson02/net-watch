@@ -355,6 +355,20 @@ a:hover {
   box-shadow: 0 1px 2px rgb(0 0 0 / 0.12);
 }
 
+/* A control with a visible caption and an optional status note. */
+.ctl-group {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.ctl-label,
+.ctl-note {
+  color: var(--muted);
+  font-size: 12px;
+}
+
 button:focus-visible,
 a:focus-visible,
 input:focus-visible {

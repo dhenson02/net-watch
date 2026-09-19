@@ -17,12 +17,13 @@ import type {
   LiveSnapshotResponse,
   ProcessInfo,
   ScatterResponse,
+  ThroughputCompare,
   ThroughputResponse,
 } from '../shared/api.ts';
 import { THROUGHPUT_OTHER } from '../shared/api.ts';
 import { parseRange } from './ch/range.ts';
 import { DISPLAY_IP } from './ch/sql.ts';
-import { alignRange, throughputQuery } from './ch/throughput.ts';
+import { alignRange, compareQuery, FIRST_MINUTE_SQL, throughputQuery } from './ch/throughput.ts';
 import { config } from './config.ts';
 import { createClickHouse } from './db/clickhouse.ts';
 
@@ -219,6 +220,75 @@ test('history throughput: padded kbps per top key, both tables, filters, drill k
   }
 });
 
+/** Bytes a ghost's kbps stand for, over the time each bucket covers (as the server divides them). */
+function ghostBytes(c: ThroughputCompare, to: number, dir: 'tx' | 'rx'): number {
+  const end = Math.ceil(to / 60_000) * 60_000;
+  let sum = 0;
+  c[dir].forEach((v, i) => {
+    const start = c.t[i]!;
+    if (v !== null) sum += (v * ((Math.min(start + c.step * 1000, end) - Math.max(start, c.since)) / 1000) * 1000) / 8;
+  });
+  return sum;
+}
+
+test('history throughput compare: the earlier window shifted onto the range, null before the data', async () => {
+  const now = Date.now();
+  const DAY = 86_400_000;
+  const plain = await get<ThroughputResponse>(`/api/history/throughput?from=${now - DAY}&to=${now}`);
+  assert.equal(plain.body.compare, undefined);
+
+  const ch = createClickHouse(config.clickhouse);
+  let first: number | null;
+  try {
+    const rs = await ch.query({ query: FIRST_MINUTE_SQL, format: 'JSONEachRow' });
+    const [row] = await rs.json<{ first: number }>();
+    first = row ? Number(row.first) * 1000 : null;
+  } finally {
+    await ch.close();
+  }
+
+  // The week before the last day: null unless the table is older than that.
+  const week = await get<ThroughputResponse>(`/api/history/throughput?from=${now - DAY}&to=${now}&compare=1w`);
+  assert.equal(week.status, 200);
+  if (first === null || first >= now - 7 * DAY) assert.equal(week.body.compare, null);
+  else assert.ok(week.body.compare);
+
+  // The day ahead compared with a day before is the last day, so the ghost is
+  // the last day's traffic: its bytes match the summary's over the same span.
+  if (first === null) return;
+  const res = await get<ThroughputResponse>(`/api/history/throughput?from=${now}&to=${now + DAY}&compare=1d`);
+  assert.equal(res.status, 200);
+  const c = res.body.compare!;
+  assert.ok(c, 'compare present');
+  assert.equal(c.offset, DAY);
+  assert.equal(c.step, 60);
+  assert.equal(c.t.length, c.tx.length);
+  for (let i = 0; i < c.t.length; i++) assert.equal(c.t[i], c.t[0]! + i * 60_000);
+  assert.ok(c.t[0]! <= now && c.t[0]! > now - 60_000, 'first bucket on the range start');
+  assert.equal(c.since, Math.max(c.t[0]!, first + DAY));
+  c.tx.forEach((v, i) => assert.equal(v === null, c.t[i]! + 60_000 <= c.since, `null only before since (${i})`));
+  const sum = await get<HistorySummary>(`/api/history/summary?from=${c.t[0]! - DAY}&to=${now}`);
+  for (const [dir, want] of [
+    ['tx', sum.body.txBytes],
+    ['rx', sum.body.rxBytes],
+  ] as const) {
+    const got = ghostBytes(c, now + DAY, dir);
+    assert.ok(Math.abs(got - want) <= Math.max(1, want * 0.005), `${dir}: ${got} vs ${want}`);
+  }
+
+  // Filters apply to the ghost too.
+  const top = (await get<ThroughputResponse>(`/api/history/throughput?from=${now - DAY}&to=${now}&by=name&top=5`)).body.keys[0];
+  if (top && top !== THROUGHPUT_OTHER) {
+    const one = await get<ThroughputResponse>(`/api/history/throughput?from=${now}&to=${now + DAY}&compare=1d&name=${encodeURIComponent(top)}`);
+    const got = ghostBytes(one.body.compare!, now + DAY, 'tx') + ghostBytes(one.body.compare!, now + DAY, 'rx');
+    assert.ok(got > 0 && got <= ghostBytes(c, now + DAY, 'tx') + ghostBytes(c, now + DAY, 'rx') + 1, `name=${top}`);
+    const uid = await get<ThroughputResponse>(`/api/history/throughput?from=${now}&to=${now + DAY}&compare=1d&uid=0`);
+    assert.equal(uid.status, 200);
+  }
+
+  for (const q of ['compare=2d', 'compare=1W', 'compare=true']) assert.equal((await get(`/api/history/throughput?${q}`)).status, 400, q);
+});
+
 test('history lifecycle: processes whose first I/O or end is in range, largest first, filters', async () => {
   const now = Date.now();
   const range = `from=${now - 7 * 86_400_000}&to=${now}`;
@@ -330,12 +400,17 @@ test('history throughput: the rollup query uses the minute key', async () => {
   assert.equal(r.table, 'flows_1m');
   const ch = createClickHouse(config.clickhouse);
   try {
-    for (const by of ['app', 'uid'] as const) {
-      const { sql, params } = throughputQuery(r, by, 'both', 8, {});
+    const queries = [
+      ['app', throughputQuery(r, 'app', 'both', 8, {})],
+      ['uid', throughputQuery(r, 'uid', 'both', 8, {})],
+      ['compare', compareQuery(r, 7 * 86_400_000, {})],
+      ['compare uid', compareQuery(r, 7 * 86_400_000, { uid: 0 })],
+    ] as const;
+    for (const [what, { sql, params }] of queries) {
       const rs = await ch.query({ query: `EXPLAIN indexes = 1 ${sql}`, query_params: params, format: 'TabSeparatedRaw' });
       const plan = await rs.text();
-      assert.match(plan, /ReadFromMergeTree \(netwatch\.flows_1m\)/, by);
-      assert.match(plan, /PrimaryKey\s+Keys:\s+minute\s+Condition: [^\n]*\(minute in \(-Inf, \d+\]\)/, `${by}: primary key on minute`);
+      assert.match(plan, /ReadFromMergeTree \(netwatch\.flows_1m\)/, what);
+      assert.match(plan, /PrimaryKey\s+Keys:\s+minute\s+Condition: [^\n]*\(minute in \(-Inf, \d+\]\)/, `${what}: primary key on minute`);
     }
   } finally {
     await ch.close();
