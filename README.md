@@ -10,8 +10,9 @@ For every process, running or ended, it records:
 - the transport (TCP/UDP) and application protocol (HTTPS, HTTP, SSH, FTP, DNS,
   QUIC, PostgreSQL, …)
 
-There is no UI. Data goes to **Redis** for realtime readers and to **ClickHouse**
-for history and analytics.
+Data goes to **Redis** for realtime readers and to **ClickHouse**
+for history and analytics. `web/` holds a separate dashboard app that reads
+both (see `web/README.md`).
 
 ## How it keeps overhead low
 
@@ -195,6 +196,7 @@ net-watch-common/   #[repr(C)] types shared by kernel and userspace
 net-watch/          collector: BTF offsets, loader/drain, aggregation, sinks
 clickhouse/         schema + server config
 deploy/             systemd unit
+web/                dashboard (standalone Node + React app, reads Redis/ClickHouse)
 ```
 
 Tests: `cargo test`. The `--ignored` integration tests need the compose stack
