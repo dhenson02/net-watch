@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import {
+  type BurstResponse,
   type BytesPerCallResponse,
   COMPARE_OFFSET_MS,
   HEATMAP_CELLS,
@@ -13,6 +14,8 @@ import {
   type ThroughputResponse,
   type TreemapResponse,
 } from '../../shared/api.ts';
+import { rawRange } from '../ch/calls.ts';
+import { buildBurst, burstQuery, burstSpanOk, parseBurstDir, type BurstRow } from '../ch/burst.ts';
 import { buildBytesPerCall, bytesPerCallQuery, parseBpcBy, parseBpcDir, parseInstance, type BytesPerCallQueryRow } from '../ch/bytesPerCall.ts';
 import { buildHeatmap, heatmapQuery, parseHeatRange, parseMetric, parseSplit, sampleCounts, type HeatmapRow } from '../ch/heatmap.ts';
 import { LIFECYCLE_LIMIT_DEFAULT, LIFECYCLE_LIMIT_MAX, lifecycleQuery, parseNames, toLifecycleProc, type LifecycleRow } from '../ch/lifecycle.ts';
@@ -52,7 +55,7 @@ import {
 import { buildTreemap, parseTreemapDir, TREEMAP_MAX_ROWS, TREEMAP_TOP, treemapQuery, type TreemapRow } from '../ch/treemap.ts';
 import { parseTz } from '../ch/tz.ts';
 import type { ClickHouseClient } from '../db/clickhouse.ts';
-import { badRequest } from '../http-error.ts';
+import { badRequest, HttpError } from '../http-error.ts';
 import type { Users } from '../users.ts';
 
 type RangeQuery = { Querystring: Record<string, string | undefined> };
@@ -180,6 +183,32 @@ export function historyRoutes(app: FastifyInstance, deps: { clickhouse: ClickHou
     if (unkRows) out.unknown = buildUnknown(unkRows, r);
     if (callRows) out.calls = buildCalls(callRows, r);
     return out;
+  });
+
+  /**
+   * Peak vs average band (13): per bucket of the throughput chart's range and
+   * step, the mean kbps over the whole bucket and the p95 and max of the
+   * per-tick kbps (idle ticks count as 0), from raw `flows` whatever the span.
+   * `dir=total|tx|rx`, or `both` for tx and rx in one scan. Over all processes
+   * the range is limited to 24 h (the scan is by time); `pid` + `start` read
+   * one instance by the primary key, any range. The page's filters apply. A
+   * query over the time limit is a 504 that suggests a shorter range.
+   */
+  app.get<RangeQuery>('/api/history/burst', async (req, reply): Promise<BurstResponse> => {
+    const parsed = parseRange(req.query);
+    const dir = parseBurstDir(req.query.dir);
+    const instance = parseInstance(req.query);
+    if (!instance && !burstSpanOk(parsed.from, parsed.to)) throw badRequest('band needs ≤ 24 h range');
+    // The throughput answer's buckets for the same range, but always raw rows.
+    const r = rawRange(parsed);
+    const { sql, params } = burstQuery({ r, dir, filters: parseFilters(req.query), instance });
+    try {
+      const rows = await chQuery<BurstRow>(ch, req.log, sql, params, clientGone(reply));
+      return buildBurst(rows, r, dir);
+    } catch (err) {
+      if (err instanceof HttpError && err.statusCode === 504) throw new HttpError(504, 'The burst band query timed out; pick a shorter range');
+      throw err;
+    }
   });
 
   /**

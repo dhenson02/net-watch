@@ -339,6 +339,42 @@ export interface ThroughputCompare {
 }
 
 // ---------------------------------------------------------------------------
+// Peak vs average band (13): an overlay on the History throughput
+
+/** `/api/history/burst` `dir`: `both` answers tx and rx in one scan (the mirrored chart). */
+export type BurstDir = 'both' | 'tx' | 'rx' | 'total';
+export type BurstSide = 'tx' | 'rx' | 'total';
+
+/** Longest range the band scans raw `flows` for over all processes (one instance is exempt). */
+export const BURST_MAX_SPAN_MS = 24 * 3_600_000;
+
+/** Per bucket, kbps, aligned with the answer's `t`; zero where nothing moved. */
+export interface BurstStats {
+  /** Bytes over the whole bucket (idle seconds count). */
+  mean: number[];
+  /** Nearest-rank p95 of the per-tick rates, idle ticks counted as 0. */
+  p95: number[];
+  /** Busiest tick. */
+  max: number[];
+}
+
+/** `/api/history/burst`: per-tick peaks against the bucket mean, from raw `flows`. */
+export interface BurstResponse {
+  /** Bucket width in seconds (the throughput answer's for the same range). */
+  step: number;
+  /** First bucket start (`from` rounded down to `step`), ms. */
+  from: number;
+  to: number;
+  dir: BurstDir;
+  /** Bucket starts (ms), every bucket present. */
+  t: number[];
+  /** The sides `dir` asks for: tx and rx for `both`, else that one. */
+  tx?: BurstStats;
+  rx?: BurstStats;
+  total?: BurstStats;
+}
+
+// ---------------------------------------------------------------------------
 // Process start/end markers (12): a track under the History throughput
 
 /** A process instance that started talking or ended inside a range. */

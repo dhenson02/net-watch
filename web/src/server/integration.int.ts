@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { after, before, test } from 'node:test';
 import type {
+  BurstResponse,
   BytesPerCallResponse,
   CompactTick,
   FlowAgg,
@@ -365,6 +366,77 @@ test('history throughput calls: calls per second on the main grid, totals match 
   const plain = await get<ThroughputResponse>(`/api/history/throughput?from=${now - 3_600_000}&to=${now}`);
   assert.equal(plain.body.calls, undefined);
   for (const q of ['calls=yes', 'calls=2', 'calls=true']) assert.equal((await get(`/api/history/throughput?${q}`)).status, 400, q);
+});
+
+test('history burst: mean/p95/max per bucket on the throughput grid, bytes match flows, filters, limits', async () => {
+  // End in the past so both queries see the same rows while the collector writes.
+  const to = Date.now() - 5 * 60_000;
+  const ch = createClickHouse(config.clickhouse);
+  try {
+    for (const span of [86_400_000, 3_600_000]) {
+      const from = to - span;
+      const step = Math.ceil(span / 1000 / 1500);
+      const res = await get<BurstResponse>(`/api/history/burst?from=${from}&to=${to}&step=${step}&dir=both`);
+      assert.equal(res.status, 200);
+      const b = res.body;
+      const tp = (await get<ThroughputResponse>(`/api/history/throughput?from=${from}&to=${to}&step=${step}&dir=both`)).body;
+      assert.deepEqual([b.step, b.from, b.t.length], [tp.step, tp.from, tp.t.length], 'same buckets as the throughput chart');
+      assert.equal(b.dir, 'both');
+      assert.equal(b.total, undefined);
+      for (const side of [b.tx!, b.rx!]) {
+        for (const a of [side.mean, side.p95, side.max]) assert.equal(a.length, b.t.length);
+        side.mean.forEach((m, i) => {
+          assert.ok(side.p95[i]! >= 0 && side.max[i]! >= side.p95[i]!, `max ≥ p95 ≥ 0 (${i})`);
+          // Whole buckets only: a tick's bytes cover the second before its ts, so a
+          // bucket cut short by `to` overstates its mean (as 05's totals do). Tick
+          // intervals jitter around 1 s, so the mean can edge past the busiest tick.
+          if (i < b.t.length - 1) assert.ok(m <= side.max[i]! * 1.1 + 0.01, `mean ≤ max (${i}): ${m} vs ${side.max[i]}`);
+        });
+      }
+      // Whole buckets (all but the last): the means add up to the raw bytes.
+      const end = b.t[b.t.length - 1]!;
+      const rs = await ch.query({
+        query: `SELECT sum(tx_bytes) AS tx, sum(rx_bytes) AS rx FROM flows
+                WHERE ts >= fromUnixTimestamp64Milli({from:Int64}) AND ts < fromUnixTimestamp64Milli({to:Int64})`,
+        query_params: { from: b.from, to: end },
+        format: 'JSONEachRow',
+      });
+      const [want] = await rs.json<{ tx: string; rx: string }>();
+      for (const d of ['tx', 'rx'] as const) {
+        const got = (b[d]!.mean.slice(0, -1).reduce((a, v) => a + v * b.step, 0) * 1000) / 8;
+        const w = Number(want![d]);
+        assert.ok(Math.abs(got - w) <= Math.max(2, w * 0.001), `${span} ${d}: ${got} vs ${w}`);
+      }
+      // One side alone; a filter keeps every tick at or under the unfiltered one.
+      const total = (await get<BurstResponse>(`/api/history/burst?from=${from}&to=${to}&step=${step}`)).body;
+      assert.equal(total.dir, 'total');
+      assert.ok(total.total && !total.tx && !total.rx);
+      const top = tp.keys[0];
+      if (top && top !== THROUGHPUT_OTHER) {
+        const one = (await get<BurstResponse>(`/api/history/burst?from=${from}&to=${to}&step=${step}&app=${encodeURIComponent(top)}`)).body.total!;
+        one.max.forEach((v, i) => assert.ok(v <= total.total!.max[i]! + 1e-6, `filtered max (${i})`));
+        one.p95.forEach((v, i) => assert.ok(v <= total.total!.p95[i]! + 1e-6, `filtered p95 (${i})`));
+      }
+    }
+    // One instance reads by the primary key, so any range is allowed.
+    const rs = await ch.query({
+      query: `SELECT pid, toString(proc_start) AS start FROM flows GROUP BY pid, proc_start ORDER BY sum(tx_bytes + rx_bytes) DESC LIMIT 1`,
+      format: 'JSONEachRow',
+    });
+    const [inst] = await rs.json<{ pid: number; start: string }>();
+    if (inst) {
+      const r = await get<BurstResponse>(`/api/history/burst?from=${to - 7 * 86_400_000}&to=${to}&pid=${inst.pid}&start=${inst.start}`);
+      assert.equal(r.status, 200);
+      assert.ok(r.body.total!.max.some((v) => v > 0), 'the busiest instance moved bytes');
+    }
+  } finally {
+    await ch.close();
+  }
+  const long = await get<{ error: string }>(`/api/history/burst?from=${to - 86_400_000 - 1}&to=${to}`);
+  assert.equal(long.status, 400);
+  assert.match(long.body.error, /24 h/);
+  assert.equal((await get('/api/history/burst?dir=sum')).status, 400);
+  assert.equal((await get('/api/history/burst?pid=1')).status, 400);
 });
 
 test('process calls: one instance from raw flows, bytes and calls per bucket', async () => {

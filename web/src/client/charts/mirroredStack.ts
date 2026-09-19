@@ -7,8 +7,8 @@
 //   `${stack}:${key}`  a band (stack is tx, rx or sum)
 //   `total:${stack}`   the stack's total line
 // Anything else (an overlay's series) is listed after the sections with its
-// series name, unless `omit` names its id prefix (11's ghost lines, whose rows
-// `sectionRows` puts inside each section instead).
+// series name, unless `omit` names its id prefix (11's ghost lines and 13's
+// band, whose rows `sectionRows` puts inside each section instead).
 import type { EChartsCoreOption } from './echarts.ts';
 import { fmtRate, fmtTime } from './format.ts';
 
@@ -42,8 +42,8 @@ export function stackTooltip(
     note?: string;
     /** Extra rows (tipRow HTML) under a section's total, before its bands. */
     sectionRows?: (stack: Stack, ts: number, total: number | null) => string;
-    /** Series id prefix left out of the rows after the sections. */
-    omit?: string;
+    /** Series id prefixes left out of the rows after the sections. */
+    omit?: string | readonly string[];
   } = {},
 ) {
   return (params: TipParam[]): string => {
@@ -60,7 +60,8 @@ export function stackTooltip(
       const more = opts.sectionRows?.(stack, ts, v ?? null) ?? '';
       return `<div class="tip-head"><span>${STACK_LABEL[stack]}</span><span class="tip-num">${total}</span></div>${more}${rows}`;
     };
-    const omitted = (id: string) => opts.omit !== undefined && id.startsWith(opts.omit);
+    const omit = opts.omit === undefined ? [] : typeof opts.omit === 'string' ? [opts.omit] : opts.omit;
+    const omitted = (id: string) => omit.some((prefix) => id.startsWith(prefix));
     const extra = params
       .filter((p) => !STACK_OF.test(p.seriesId) && !p.seriesId.startsWith('total:') && !omitted(p.seriesId) && p.value[1] !== null && p.value[1] !== undefined)
       .map((p) => tipRow(p.color, p.seriesName, fmtRate(Math.abs(p.value[1]!))))

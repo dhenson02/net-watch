@@ -3,7 +3,13 @@ import type { ClickHouseClient } from '../db/clickhouse.ts';
 import { HttpError } from '../http-error.ts';
 
 /** Per-query limit; readonly=2 still lets a query set it. */
-const MAX_EXECUTION_TIME_S = 20;
+export const MAX_EXECUTION_TIME_S = 20;
+
+/** ClickHouse's error for a query stopped by `max_execution_time` (code 159). */
+export const isTimeout = (err: unknown) => {
+  const e = err as { type?: unknown; code?: unknown } | null;
+  return e?.type === 'TIMEOUT_EXCEEDED' || e?.code === '159';
+};
 
 /**
  * An AbortSignal that fires when the client goes away before the response is
@@ -25,7 +31,7 @@ export function clientGone(reply: FastifyReply): AbortSignal {
  * `params` (`{name:Type}` placeholders). UInt64/Int64 columns arrive as JSON
  * strings (output_format_json_quote_64bit_integers stays at its default), so
  * type them as `string` or convert sums with Number(). ClickHouse errors become
- * 502s carrying the server's message.
+ * 502s carrying the server's message; a query stopped by the time limit is a 504.
  */
 export async function chQuery<T>(
   ch: ClickHouseClient,
@@ -55,6 +61,7 @@ export async function chQuery<T>(
     if (signal?.aborted) throw new HttpError(499, 'client closed request');
     const message = (err as Error).message;
     log.warn({ ms: Math.round(performance.now() - start), err: message }, 'clickhouse query failed');
+    if (isTimeout(err)) throw new HttpError(504, `ClickHouse: the query took longer than ${MAX_EXECUTION_TIME_S} s`);
     throw new HttpError(502, `ClickHouse: ${message}`);
   }
 }

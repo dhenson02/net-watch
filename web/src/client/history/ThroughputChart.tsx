@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useRef, type ReactNode, type RefObject } from 'react';
 import {
   THROUGHPUT_OTHER,
+  type BurstResponse,
   type CompareOffset,
   type ThroughputBy,
   type ThroughputCompare,
   type ThroughputDir,
   type ThroughputResponse,
 } from '../../shared/api.ts';
-import type { TimeRange } from '../api.ts';
+import { urls, type TimeRange } from '../api.ts';
 import { EChart, useEChartRef } from '../charts/EChart.tsx';
 import type { EChartsCoreOption, EChartsType } from '../charts/echarts.ts';
 import { fmtDuration, fmtRate, fmtTime } from '../charts/format.ts';
@@ -18,7 +19,10 @@ import { useColorScheme } from '../charts/useColorScheme.ts';
 import { useSlots } from '../charts/useSlots.ts';
 import { Panel } from '../components/Panel.tsx';
 import { SegmentedControl } from '../components/SegmentedControl.tsx';
+import { Toggle } from '../components/Toggle.tsx';
+import { useQuery } from '../hooks/useQuery.ts';
 import { setSearchParams, useSearch } from '../router.ts';
+import { BAND_TOO_LONG, bandSpanOk, BURST_ID, burstAt, burstSeries, burstText, parseBandParam } from './burst.ts';
 import { COMPARE_NOUN, deviationRuns, GHOST_ID, ghostAt, ghostSeries, ghostText, parseCompareParam } from './ghost.ts';
 import { bandColors, buildSeries, drillDown, TOP_DEFAULT, type HistorySeries } from './throughputSeries.ts';
 import { useThroughput, useThroughputParams } from './useThroughput.ts';
@@ -104,7 +108,9 @@ type Props = {
  * the plot writes the new range to the URL, which re-queries at a finer step;
  * double-clicking a legend item filters to it and drills into the next
  * dimension. `compare=1d|1w` (11) draws the same window that long before as
- * a dashed ghost behind the stack.
+ * a dashed ghost behind the stack. `band=1` (13) shades each bucket's per-tick
+ * p95 above the mean (the stack's top) and dots its busiest tick, from raw
+ * flows, for ranges up to 24 h.
  */
 export function ThroughputChart({ range, slots, overlays, actions, chartRef, unknown = false, calls = false, onAnswer, below }: Props) {
   const p = useThroughputParams();
@@ -137,7 +143,22 @@ export function ThroughputChart({ range, slots, overlays, actions, chartRef, unk
     return ghostSeries(ghost, p.dir, cssVar('--muted'), `same time ${noun}`, areas);
     // scheme re-reads the muted color.
   }, [ghost, series, d, p.dir, noun, scheme]);
-  const allOverlays = useMemo(() => [...ghostSeriesList, ...(overlays ?? [])], [ghostSeriesList, overlays]);
+
+  // 13: the burst band, its own query over the same buckets (raw flows, ≤ 24 h).
+  const band = useMemo(() => parseBandParam(search), [search]);
+  const bandOk = bandSpanOk(range);
+  const bandQ = useQuery<BurstResponse>(band && bandOk ? urls.historyBurst(range, { dir: p.dir, filters: p.filters }) : null);
+  // A stale answer still lines up by time, but only one for the drawn direction has the right sides.
+  const burst = band && bandOk && bandQ.data?.dir === p.dir ? bandQ.data : null;
+  const burstSeriesList = useMemo(
+    () => (burst ? burstSeries(burst, p.dir, cssVar('--accent')) : []),
+    // scheme re-reads the accent color.
+    [burst, p.dir, scheme],
+  );
+  const burstTip = useRef<BurstResponse | null>(null);
+  burstTip.current = burst;
+
+  const allOverlays = useMemo(() => [...ghostSeriesList, ...burstSeriesList, ...(overlays ?? [])], [ghostSeriesList, burstSeriesList, overlays]);
   // The tooltip reads the ghost at the hovered time from here, so the option needn't change with it.
   const ghostTip = useRef<{ c: ThroughputCompare; noun: string } | null>(null);
   ghostTip.current = ghost && { c: ghost, noun };
@@ -147,16 +168,21 @@ export function ThroughputChart({ range, slots, overlays, actions, chartRef, unk
   const option = useMemo<EChartsCoreOption>(() => {
     const stacks = series?.stacks ?? (p.dir === 'both' ? ['tx', 'rx'] : p.dir === 'total' ? ['sum'] : [p.dir]);
     const muted = cssVar('--muted');
+    const accent = cssVar('--accent');
     return mirroredStackOption({
       stacks: stacks as HistorySeries['stacks'],
       muted,
       tooltip: stackTooltip(stacks as HistorySeries['stacks'], {
         timeStyle: step < 60 ? 'time' : 'datetime',
         note: `${fmtDuration(step * 1000)} mean`,
-        omit: GHOST_ID,
+        omit: [GHOST_ID, BURST_ID],
         sectionRows: (stack, ts, total) => {
           const g = ghostTip.current;
-          return g ? tipRow(muted, `same time ${g.noun}`, ghostText(total, ghostAt(g.c, stack, ts), fmtRate)) : '';
+          const b = burstTip.current && burstAt(burstTip.current, stack, ts);
+          return (
+            (g ? tipRow(muted, `same time ${g.noun}`, ghostText(total, ghostAt(g.c, stack, ts), fmtRate)) : '') +
+            (b ? tipRow(accent, 'per tick', burstText(b, fmtRate)) : '')
+          );
         },
       }),
       grid: GRID,
@@ -269,6 +295,15 @@ export function ThroughputChart({ range, slots, overlays, actions, chartRef, unk
           ? `${noun}: no data before ${fmtTime(d.compare.since - d.compare.offset, 'datetime')}`
           : ''
       : '';
+  const bandNote = !band
+    ? ''
+    : !bandOk
+      ? BAND_TOO_LONG
+      : bandQ.error
+        ? bandQ.error
+        : bandQ.loading && !burst
+          ? 'loading band…'
+          : '';
   const source = d ? `${fmtDuration(d.step * 1000)} buckets from ${d.table === 'flows' ? 'raw flows' : 'the per-minute rollup'}` : '';
   const empty = d && !q.stale && !d.keys.length ? 'No traffic in this range.' : undefined;
   const topKeys = useMemo(() => (d && !q.stale ? d.keys.filter((k) => k !== THROUGHPUT_OTHER) : null), [d, q.stale]);
@@ -306,6 +341,20 @@ export function ThroughputChart({ range, slots, overlays, actions, chartRef, unk
               onChange={(v) => set({ compare: v === 'off' ? null : v })}
             />
             {ghostNote && <span className="ctl-note">{ghostNote}</span>}
+          </span>
+          <span className="ctl-group">
+            <Toggle
+              label="Burst band"
+              checked={band && bandOk}
+              disabled={!bandOk}
+              onChange={(on) => set({ band: on ? '1' : null })}
+              title={
+                bandOk
+                  ? 'Shade each bucket from its mean up to the p95 of its per-tick rates, and dot its busiest tick (raw flows)'
+                  : BAND_TOO_LONG
+              }
+            />
+            {bandNote && <span className="ctl-note">{bandNote}</span>}
           </span>
           {actions}
         </>

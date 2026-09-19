@@ -461,6 +461,15 @@ input:focus-visible {
   transition: transform 0.15s;
 }
 
+.toggle-disabled {
+  cursor: not-allowed;
+  color: var(--muted);
+}
+
+.toggle-disabled .toggle-track {
+  opacity: 0.5;
+}
+
 .toggle input:checked + .toggle-track {
   background: var(--accent);
 }

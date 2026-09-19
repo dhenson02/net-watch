@@ -45,6 +45,9 @@ export const urls = {
     calls?: boolean,
   ) =>
     `/api/history/throughput?${qs({ from: r.from, to: r.to, step: finestStep(r), by: p.by, dir: p.dir, top: p.top, ...p.filters, compare: compare ?? undefined, unknown: unknown ? 1 : undefined, calls: calls ? 1 : undefined })}`,
+  // 13: per-tick p95/max vs the mean over the same buckets as historyThroughput; `dir` both|tx|rx|total, ≤ 24 h.
+  historyBurst: (r: TimeRange, p: { dir: string; filters: UrlFilters }) =>
+    `/api/history/burst?${qs({ from: r.from, to: r.to, step: finestStep(r), dir: p.dir, ...p.filters })}`,
   // 14: one instance's bytes and calls, from raw flows, at the finest step.
   processCalls: (pid: string, start: string, r: TimeRange) =>
     `/api/process/${encodeURIComponent(pid)}/${encodeURIComponent(start)}/calls?${qs({ from: r.from, to: r.to, step: finestStep(r) })}`,
