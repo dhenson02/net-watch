@@ -230,3 +230,34 @@ export interface HistoryFlowsResponse {
   /** More rows matched than `limit`; the smallest were left out. */
   truncated: boolean;
 }
+
+// ---------------------------------------------------------------------------
+// History throughput (05): stacked by one dimension
+
+/** What the History throughput chart stacks by. `dest` is `ip:port` (IPv6 in brackets). */
+export type ThroughputBy = 'app' | 'name' | 'proto' | 'uid' | 'dest';
+/** `both` mirrors rx below tx; `total` stacks tx + rx. The top N is ranked by the same direction. */
+export type ThroughputDir = 'both' | 'tx' | 'rx' | 'total';
+
+/** Series key of the remainder: every key outside the top N. */
+export const THROUGHPUT_OTHER = '__other';
+
+/** `/api/history/throughput`: kbps per bucket for the top keys plus the rest. */
+export interface ThroughputResponse {
+  /** Bucket width in seconds. */
+  step: number;
+  /** First bucket start (the requested `from` rounded down to `step`), ms. */
+  from: number;
+  /** The requested end, ms (exclusive). */
+  to: number;
+  table: 'flows' | 'flows_1m';
+  /** Largest first by the requested direction; THROUGHPUT_OTHER last when present. */
+  keys: string[];
+  /** Display names where they differ from the key (`uid` → username). */
+  labels: Record<string, string>;
+  /** Bucket starts (ms). Every bucket is present, zero-filled. */
+  t: number[];
+  /** kbps, aligned with `t`. A bucket cut short by `to` is divided by the time it covers. */
+  tx: Record<string, number[]>;
+  rx: Record<string, number[]>;
+}

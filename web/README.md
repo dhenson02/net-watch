@@ -66,10 +66,16 @@ the background, and `/api/health` reports the state of each backend.
 | `GET /api/live/snapshot` | the latest snapshot's process list (`LiveSnapshotResponse`: rates, totals, flow count, username; cmdline cut to 300 chars) from memory; 503 until the first tick |
 | `GET /api/live/flows?seconds=10` | flows of the hub's last ticks (`seconds` 1..30; the hub keeps the full `flows` of 30 ticks) grouped by process name, proto, app, remote ip and port: mean kbps per tick, largest first (`LiveFlowsResponse`); the live Sankey |
 | `GET /api/live/meta` | `netwatch:meta` (last tick, interval, drops) plus the sizes of `netwatch:alive` and `netwatch:ended`; 503 while Redis is down |
-| `GET /api/history/summary?from&to` | payload bytes and process count over a range |
-| `GET /api/history/flows?from&to&limit=300&dest` | bytes per (process name, proto, app, ip, port) over a range, largest first, `limit` 1..2000 (`truncated` says whether more matched); `dest=ip:port` keeps one destination. Raw `flows` up to 2 h, else `flows_1m` from the minute `from` falls in. Each row's `id` is the busiest instance of the name, for click-through |
+| `GET /api/history/summary?from&to&<filters>` | payload bytes and process count over a range |
+| `GET /api/history/flows?from&to&limit=300&<filters>` | bytes per (process name, proto, app, ip, port) over a range, largest first, `limit` 1..2000 (`truncated` says whether more matched). Raw `flows` up to 2 h, else `flows_1m` from the minute `from` falls in. Each row's `id` is the busiest instance of the name, for click-through |
+| `GET /api/history/throughput?from&to&step&by=app&dir=both&top=8&<filters>` | kbps per bucket stacked by `by` (`app`, `name`, `proto`, `uid`, `dest`): the top `top` (5..20) keys over the whole range, ranked by `dir` (`both`/`total`: tx + rx, `tx`, `rx`), plus `__other` (`ThroughputResponse`, column-oriented, every key zero-padded to every bucket). `from` is rounded down to a bucket start; a bucket cut short by `to` is divided by the time it covers. `labels` names uids (`jay (1000)`) |
 | `GET /api/history/ingest` | newest `flows.ts` and the row count of the last minute, to show whether the collector's ClickHouse sink keeps up |
 | `GET /api/process/:pid/:start` | one process instance from `processes`; 404 if unknown |
+
+`<filters>` are optional exact matches, all ANDed: `name`, `app`, `proto`,
+`uid`, and `dest=ip:port` (IPv6 as `[addr]:port`). `flows_1m` has no uid
+column, so grouping or filtering it by uid joins `processes`; rows whose
+process is unknown there get uid 4294967295 ("unknown uid").
 
 Errors are `{ "error": "…" }` with a 4xx/5xx status; ClickHouse failures are
 502. History endpoints take `from`/`to` in ms (default: the last hour) and an
@@ -92,14 +98,18 @@ read; ticks lost meanwhile (stream trimmed, collector stopped) are flagged with
 src/server/    Fastify API + static hosting of dist/client (SPA fallback)
   db/          Redis and ClickHouse clients and their health probes
   live/        LiveHub (stream reader, ring buffer, SSE fan-out), snapshot compaction
-  ch/          chQuery, parseRange, SQL fragments (DISPLAY_IP), timezone check
+  ch/          chQuery, parseRange, SQL fragments (DISPLAY_IP, BY_COLUMNS, filters, flowSource), the throughput
+               query and its padding/rate conversion (throughput.ts), timezone check
   routes/      one module per API area (health, live, history, process)
   users.ts     uid → username from /etc/passwd (read at startup, refreshed hourly)
 src/client/    React SPA (Vite root)
   router.ts    usePath / navigate / useSearchParam / Link; all page state is in the URL
   pages/       Live, History, Process
   charts/      ECharts registration, <EChart>, palette (incl. fixed app hues), formatters, themes,
-               FlowSankey (Live + History panels) and its pure graph builder buildSankey
+               FlowSankey (Live + History panels) and its pure graph builder buildSankey,
+               mirroredStack (the stacked tx/rx area chart option shared by Live and History throughput)
+  history/     History page sections: ThroughputChart (05), useThroughput (URL state + query) and its pure
+               series/drill-down logic throughputSeries.ts
   live/        Live page sections (HealthStrip, LiveThroughput + its pure series builder useLiveThroughput,
                TopTalkers + its pure row logic topTalkers.ts, useSnapshot)
   components/  Panel, StatTile, Sparkline (inline SVG), RangePicker, SegmentedControl, Toggle, StatusPill
@@ -107,7 +117,7 @@ src/client/    React SPA (Vite root)
 src/shared/    API response types, imported by both sides
 ```
 
-Routes: `/` → `/live` (`?live_win=5m|15m|max&live_by=name|id&sort=[-]key&q=filter&idle=show&flow_dir=tx|rx`), `/history?from&to&filter.dest=ip:port&flow_dir=tx|rx`, `/process/:pid/:start`.
+Routes: `/` → `/live` (`?live_win=5m|15m|max&live_by=name|id&sort=[-]key&q=filter&idle=show&flow_dir=tx|rx`), `/history?from&to&by=app|name|proto|uid|dest&dir=both|tx|rx|total&top=5..20&filter.name|app|proto|uid|dest=…&flow_dir=tx|rx` (default range: the last 24 h; the `filter.*` params apply to the totals, the throughput chart and the flow diagram), `/process/:pid/:start`.
 
 Conventions:
 

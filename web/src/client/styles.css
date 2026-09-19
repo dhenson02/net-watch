@@ -928,7 +928,7 @@ input:focus-visible {
   color: var(--warn);
 }
 
-/* Page-level filter chips (History: ?filter.dest) */
+/* Page-level filter chips (History: ?filter.name/app/proto/uid/dest) */
 .filter-bar {
   display: flex;
   flex-wrap: wrap;
@@ -966,6 +966,21 @@ input:focus-visible {
   font-size: 14px;
   line-height: 1;
   cursor: pointer;
+}
+
+.chip-clear {
+  padding: 2px 6px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.chip-clear:hover,
+.chip-clear:focus-visible {
+  color: var(--text);
 }
 
 .chip-x:hover,

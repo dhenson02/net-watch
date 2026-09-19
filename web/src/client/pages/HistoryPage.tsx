@@ -1,20 +1,25 @@
 import { urls, type HistorySummary } from '../api.ts';
-import { DEST_PARAM, HistoryFlowSankey } from '../charts/FlowSankey.tsx';
+import { HistoryFlowSankey } from '../charts/FlowSankey.tsx';
 import { fmtBytes, fmtDuration, fmtTime } from '../charts/format.ts';
 import { useSlots } from '../charts/useSlots.ts';
 import { Panel } from '../components/Panel.tsx';
 import { RangePicker } from '../components/RangePicker.tsx';
+import { ThroughputChart } from '../history/ThroughputChart.tsx';
+import { BY_VALUES, filterParam } from '../history/throughputSeries.ts';
+import { useThroughputParams } from '../history/useThroughput.ts';
 import { useQuery } from '../hooks/useQuery.ts';
 import { useTimeRange } from '../hooks/useTimeRange.ts';
-import { setSearchParams, useSearchParam } from '../router.ts';
+import { setSearchParams } from '../router.ts';
+
+const FILTER_NOUN = { app: 'app', name: 'process', proto: 'proto', uid: 'uid', dest: 'destination' } as const;
 
 export function HistoryPage() {
   const range = useTimeRange();
-  const summary = useQuery<HistorySummary>(urls.historySummary(range));
+  const { filters } = useThroughputParams();
+  const summary = useQuery<HistorySummary>(urls.historySummary(range, filters));
   const s = summary.data;
   const slots = useSlots();
-  const [destParam] = useSearchParam(DEST_PARAM, '');
-  const dest = destParam || null;
+  const active = BY_VALUES.filter((d) => filters[d] !== undefined);
 
   return (
     <>
@@ -25,21 +30,33 @@ export function HistoryPage() {
       <p className="muted range-label">
         {fmtTime(range.from)} – {fmtTime(range.to)} ({fmtDuration(range.to - range.from)})
       </p>
-      {dest && (
+      {active.length > 0 && (
         <p className="filter-bar">
-          <span className="chip">
-            destination <code>{dest}</code>
-            <button type="button" className="chip-x" aria-label="Clear the destination filter" onClick={() => setSearchParams({ [DEST_PARAM]: null })}>
-              ×
+          {active.map((d) => (
+            <span className="chip" key={d}>
+              {FILTER_NOUN[d]} <code>{filters[d]}</code>
+              <button
+                type="button"
+                className="chip-x"
+                aria-label={`Clear the ${FILTER_NOUN[d]} filter`}
+                onClick={() => setSearchParams({ [filterParam(d)]: null })}
+              >
+                ×
+              </button>
+            </span>
+          ))}
+          {active.length > 1 && (
+            <button type="button" className="chip-clear" onClick={() => setSearchParams(Object.fromEntries(active.map((d) => [filterParam(d), null])))}>
+              clear all
             </button>
-          </span>
-          <span className="muted">applies to the flow diagram</span>
+          )}
+          <span className="muted">applies to the totals, the throughput chart and the flow diagram</span>
         </p>
       )}
       <div className="panels">
         <Panel
           title="Totals"
-          subtitle={s && `${s.range.table === 'flows' ? 'raw flows' : 'per-minute rollup'}, ${fmtDuration(s.range.step * 1000)} buckets`}
+          subtitle={s && `${s.range.table === 'flows' ? 'raw flows' : 'per-minute rollup'}${active.length ? ', filtered' : ''}`}
           loading={summary.loading}
           error={summary.error}
           wide
@@ -51,7 +68,9 @@ export function HistoryPage() {
           </div>
         </Panel>
 
-        <HistoryFlowSankey range={range} dest={dest} slots={slots} />
+        <ThroughputChart range={range} slots={slots} />
+
+        <HistoryFlowSankey range={range} filters={filters} slots={slots} />
       </div>
     </>
   );

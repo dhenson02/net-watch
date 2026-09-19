@@ -17,7 +17,7 @@ import { useColorScheme } from './useColorScheme.ts';
 const LIVE_SECONDS = 10;
 const LIVE_POLL_MS = 2000;
 
-/** The History page's destination filter; plan 05's throughput chart reads it too. */
+/** The History page's destination filter (one of its `filter.*` params, see history/useThroughput.ts). */
 export const DEST_PARAM = 'filter.dest';
 
 const DIR_OPTIONS = [
@@ -208,10 +208,11 @@ export function LiveFlowSankey({ slots }: { slots: SlotAssigner }) {
   );
 }
 
-/** The Sankey on the History page: bytes over the selected range, optionally for one destination. */
-export function HistoryFlowSankey({ range, dest, slots }: { range: TimeRange; dest: string | null; slots: SlotAssigner }) {
+/** The Sankey on the History page: bytes over the selected range, with the page's filters. */
+export function HistoryFlowSankey({ range, filters, slots }: { range: TimeRange; filters: Partial<Record<string, string>>; slots: SlotAssigner }) {
   const [dir, setDir] = useDir();
-  const q = useQuery<HistoryFlowsResponse>(urls.historyFlows(range, dest));
+  const q = useQuery<HistoryFlowsResponse>(urls.historyFlows(range, filters));
+  const dest = filters.dest;
   const d = q.data;
   const onDest = (key: string) => setSearchParams({ [DEST_PARAM]: key });
   return (

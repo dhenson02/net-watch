@@ -2,7 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CompactTick } from '../../shared/api.ts';
 import { EChart, useEChartRef } from '../charts/EChart.tsx';
 import type { EChartsCoreOption, EChartsType } from '../charts/echarts.ts';
-import { fmtRate, fmtTime } from '../charts/format.ts';
+import { fmtTime } from '../charts/format.ts';
+import { cssVar } from '../charts/cssVar.ts';
+import { bandSeries, mirroredStackOption, stackTooltip, totalSeries } from '../charts/mirroredStack.ts';
 import { slotColor, type Scheme, type SlotAssigner } from '../charts/palette.ts';
 import { useColorScheme } from '../charts/useColorScheme.ts';
 import { Panel } from '../components/Panel.tsx';
@@ -27,71 +29,19 @@ const GROUP_OPTIONS = [
   { value: 'id', label: 'by instance', title: 'One band per process instance (pid + start time)' },
 ] as const;
 
-const GRID = { top: 32, right: 16, bottom: 28, left: 64 };
-
-const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
-
-type TipParam = { seriesId: string; seriesName: string; value: [number, number | null]; color: string };
-
-/** Axis tooltip: time, then tx and rx sections, each sorted largest first. Zero rows are left out. */
-function tooltip(params: TipParam[]): string {
-  const ts = params[0]?.value[0];
-  if (ts === undefined) return '';
-  const rows = (dir: 'tx' | 'rx') =>
-    params
-      .filter((p) => p.seriesId.startsWith(`${dir}:`) && p.value[1])
-      .sort((a, b) => Math.abs(b.value[1]!) - Math.abs(a.value[1]!))
-      .map(
-        (p) =>
-          `<div class="tip-row"><span class="tip-swatch" style="background:${p.color}"></span>` +
-          `<span class="tip-name">${esc(p.seriesName)}</span><span class="tip-num">${fmtRate(Math.abs(p.value[1]!))}</span></div>`,
-      )
-      .join('');
-  const total = (dir: 'tx' | 'rx') => {
-    const v = params.find((p) => p.seriesId === `total:${dir}`)?.value[1];
-    return v === null || v === undefined ? '—' : fmtRate(Math.abs(v));
-  };
-  return (
-    `<div class="tip"><div class="tip-time">${fmtTime(ts, 'time')}</div>` +
-    `<div class="tip-head"><span>↑ sent</span><span class="tip-num">${total('tx')}</span></div>${rows('tx')}` +
-    `<div class="tip-head"><span>↓ received</span><span class="tip-num">${total('rx')}</span></div>${rows('rx')}</div>`
-  );
-}
+const TOOLTIP = stackTooltip(['tx', 'rx'], { timeStyle: 'time' });
 
 const color = (b: Band, scheme: Scheme) => slotColor(b.slot, scheme);
 
 /** Full series definitions; used when the set of bands or their colors change. */
 function seriesDefs(data: Throughput, scheme: Scheme, ink: string) {
-  const band = (b: Band, dir: 'tx' | 'rx') => ({
-    id: `${dir}:${b.key}`,
-    name: b.label,
-    type: 'line',
-    stack: dir,
-    data: b[dir],
-    color: color(b, scheme),
-    areaStyle: { opacity: dir === 'tx' ? 0.85 : 0.6 },
-    lineStyle: { width: 0 },
-    symbol: 'none',
-    sampling: 'lttb',
-    emphasis: { disabled: true },
-  });
-  const total = (dir: 'tx' | 'rx') => ({
-    id: `total:${dir}`,
-    name: 'total',
-    type: 'line',
-    data: dir === 'tx' ? data.totalTx : data.totalRx,
-    color: ink,
-    lineStyle: { width: 1, color: ink, opacity: 0.7 },
-    symbol: 'none',
-    sampling: 'lttb',
-    silent: true,
-    z: 3,
-    emphasis: { disabled: true },
-    ...(dir === 'tx' && {
-      markLine: { silent: true, symbol: 'none', label: { show: false }, lineStyle: { color: ink, type: 'solid', width: 1, opacity: 0.5 }, data: [{ yAxis: 0 }] },
-    }),
-  });
-  return [...data.bands.map((b) => band(b, 'tx')), ...data.bands.map((b) => band(b, 'rx')), total('tx'), total('rx')];
+  const band = (b: Band, dir: 'tx' | 'rx') => bandSeries({ key: b.key, label: b.label, color: color(b, scheme) }, dir, b[dir]);
+  return [
+    ...data.bands.map((b) => band(b, 'tx')),
+    ...data.bands.map((b) => band(b, 'rx')),
+    totalSeries('tx', data.totalTx, ink, true),
+    totalSeries('rx', data.totalRx, ink),
+  ];
 }
 
 /** Data-only update for an unchanged set of bands. */
@@ -103,8 +53,6 @@ function seriesData(data: Throughput) {
     { id: 'total:rx', data: data.totalRx },
   ];
 }
-
-const cssVar = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
 /**
  * 01: system-wide throughput at tick resolution, stacked by the top processes.
@@ -136,26 +84,11 @@ export function LiveThroughput({ slots }: { slots: SlotAssigner }) {
   const data = useLiveThroughput(view, by, windowS, slots);
 
   // Structure only; series and their data are pushed through the ref.
-  const option = useMemo<EChartsCoreOption>(() => {
-    const muted = cssVar('--muted');
-    const label = (text: string, pos: { top?: number; bottom?: number }) => ({
-      type: 'text',
-      left: GRID.left + 8,
-      ...pos,
-      silent: true,
-      z: 10,
-      style: { text, fill: muted, font: '11px sans-serif' },
-    });
-    return {
-      animation: false,
-      grid: GRID,
-      legend: { type: 'scroll', top: 0, left: 0, right: 0, icon: 'roundRect', itemWidth: 10, itemHeight: 10 },
-      tooltip: { trigger: 'axis', axisPointer: { type: 'line' }, formatter: tooltip, confine: true },
-      xAxis: { type: 'time', splitLine: { show: false } },
-      yAxis: { type: 'value', axisLabel: { formatter: (v: number) => fmtRate(Math.abs(v)) } },
-      graphic: [label('↑ sent', { top: GRID.top + 4 }), label('↓ received', { bottom: GRID.bottom + 4 })],
-    };
-  }, [scheme]);
+  const option = useMemo<EChartsCoreOption>(
+    () => mirroredStackOption({ stacks: ['tx', 'rx'], muted: cssVar('--muted'), tooltip: TOOLTIP }),
+    // cssVar reads the current theme's colors.
+    [scheme],
+  );
 
   const first = view[0];
   const xMin = win === 'max' ? (first?.ts ?? end) : end - windowS * 1000;

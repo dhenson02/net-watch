@@ -5,12 +5,14 @@ import * as echarts from 'echarts/core';
 import { BarChart, LineChart, SankeyChart } from 'echarts/charts';
 import {
   AriaComponent,
+  BrushComponent,
   DataZoomComponent,
   GraphicComponent,
   GridComponent,
   LegendComponent,
   MarkAreaComponent,
   MarkLineComponent,
+  ToolboxComponent,
   TooltipComponent,
 } from 'echarts/components';
 import { CanvasRenderer } from 'echarts/renderers';
@@ -20,12 +22,15 @@ echarts.use([
   BarChart,
   SankeyChart,
   AriaComponent,
+  BrushComponent,
   DataZoomComponent,
   GraphicComponent,
   GridComponent,
   LegendComponent,
   MarkAreaComponent,
   MarkLineComponent,
+  // The brush (History throughput's drag-to-zoom) needs it registered; no toolbox is shown.
+  ToolboxComponent,
   TooltipComponent,
   CanvasRenderer,
 ]);

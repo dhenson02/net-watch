@@ -1,10 +1,12 @@
 import type { FastifyInstance } from 'fastify';
-import type { HistoryFlowsResponse, HistoryIngest, HistorySummary } from '../../shared/api.ts';
+import type { HistoryFlowsResponse, HistoryIngest, HistorySummary, ThroughputResponse } from '../../shared/api.ts';
 import { chQuery, clientGone } from '../ch/query.ts';
 import { parseRange, rangeInfo, rangeParams, timeFilter } from '../ch/range.ts';
-import { DEST_FILTER, DISPLAY_IP, parseDest } from '../ch/sql.ts';
+import { DISPLAY_IP, filterSql, flowSource, parseBy, parseFilters, UNKNOWN_UID } from '../ch/sql.ts';
+import { alignRange, buildThroughput, parseDir, throughputQuery, type ThroughputRow } from '../ch/throughput.ts';
 import type { ClickHouseClient } from '../db/clickhouse.ts';
 import { badRequest } from '../http-error.ts';
+import type { Users } from '../users.ts';
 
 type RangeQuery = { Querystring: Record<string, string | undefined> };
 
@@ -18,19 +20,23 @@ function intInRange(raw: string | undefined, name: string, fallback: number, min
   return n;
 }
 
-export function historyRoutes(app: FastifyInstance, deps: { clickhouse: ClickHouseClient }) {
-  const ch = deps.clickhouse;
+export function historyRoutes(app: FastifyInstance, deps: { clickhouse: ClickHouseClient; users: Users }) {
+  const { clickhouse: ch, users } = deps;
 
-  /** Payload totals over a range; the History page header. */
+  /** Payload totals over a range, with the page's filters; the History page header. */
   app.get<RangeQuery>('/api/history/summary', async (req, reply): Promise<HistorySummary> => {
     const r = parseRange(req.query);
+    const filters = parseFilters(req.query);
+    const f = filterSql(filters);
+    const time = timeFilter(r);
     // `r.table` comes from a fixed whitelist in parseRange, never from input.
+    const src = flowSource(r.table, time, filters.uid !== undefined);
     const [row] = await chQuery<{ tx: string; rx: string; n: string }>(
       ch,
       req.log,
       `SELECT sum(tx_bytes) AS tx, sum(rx_bytes) AS rx, uniqExact(pid, proc_start) AS n
-       FROM ${r.table} WHERE ${timeFilter(r)}`,
-      rangeParams(r),
+       FROM ${src} WHERE ${time}${f.sql}`,
+      { ...rangeParams(r), ...f.params },
       clientGone(reply),
     );
     return { range: rangeInfo(r), txBytes: Number(row?.tx ?? 0), rxBytes: Number(row?.rx ?? 0), processes: Number(row?.n ?? 0) };
@@ -44,7 +50,8 @@ export function historyRoutes(app: FastifyInstance, deps: { clickhouse: ClickHou
   app.get<RangeQuery>('/api/history/flows', async (req, reply): Promise<HistoryFlowsResponse> => {
     const r = parseRange(req.query);
     const limit = intInRange(req.query.limit, 'limit', 300, 1, MAX_FLOW_ROWS);
-    const dest = parseDest(req.query.dest);
+    const filters = parseFilters(req.query);
+    const f = filterSql(filters);
     // Raw flows up to 2 h (exact edges); beyond that the rollup, including the
     // minute `from` falls in. Both fragments are constants.
     const time =
@@ -61,15 +68,15 @@ export function historyRoutes(app: FastifyInstance, deps: { clickhouse: ClickHou
          SELECT name, proto, app, raddr, rport,
                 concat(toString(pid), ':', toString(proc_start)) AS iid,
                 sum(tx_bytes) AS itx, sum(rx_bytes) AS irx
-         FROM ${r.table}
-         WHERE ${time}${dest ? ` AND ${DEST_FILTER}` : ''}
+         FROM ${flowSource(r.table, time, filters.uid !== undefined)}
+         WHERE ${time}${f.sql}
          GROUP BY name, proto, app, raddr, rport, pid, proc_start
        )
        GROUP BY name, proto, app, raddr, rport
        HAVING tx + rx > 0
        ORDER BY tx + rx DESC, name, app, ip, rport
        LIMIT {limit:UInt32}`,
-      { ...rangeParams(r), ...dest, limit: limit + 1 },
+      { ...rangeParams(r), ...f.params, limit: limit + 1 },
       clientGone(reply),
     );
     const truncated = rows.length > limit;
@@ -78,6 +85,30 @@ export function historyRoutes(app: FastifyInstance, deps: { clickhouse: ClickHou
       flows: rows.slice(0, limit).map((row) => ({ ...row, tx: Number(row.tx), rx: Number(row.rx) })),
       truncated,
     };
+  });
+
+  /**
+   * Throughput over a range stacked by one dimension (05): kbps per bucket for
+   * the top N keys plus the rest, zero-padded. `from` is rounded down to a
+   * bucket start. Filters: name, app, proto, uid, dest (exact).
+   */
+  app.get<RangeQuery>('/api/history/throughput', async (req, reply): Promise<ThroughputResponse> => {
+    const r = alignRange(parseRange(req.query));
+    const by = parseBy(req.query.by);
+    const dir = parseDir(req.query.dir);
+    const top = intInRange(req.query.top, 'top', 8, 5, 20);
+    const { sql, params } = throughputQuery(r, by, dir, top, parseFilters(req.query));
+    const rows = await chQuery<ThroughputRow>(ch, req.log, sql, params, clientGone(reply));
+    const labels: Record<string, string> = {};
+    if (by === 'uid') {
+      for (const { key } of rows) {
+        if (!/^\d+$/.test(key) || key in labels) continue;
+        const uid = Number(key);
+        const user = uid === UNKNOWN_UID ? 'unknown uid' : users.name(uid);
+        if (user) labels[key] = uid === UNKNOWN_UID ? user : `${user} (${key})`;
+      }
+    }
+    return buildThroughput(rows, r, dir, labels);
   });
 
   /**

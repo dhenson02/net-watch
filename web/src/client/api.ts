@@ -21,12 +21,19 @@ export interface TimeRange {
   to: number;
 }
 
+/** The History page's `filter.*` values, sent as the endpoints' name/app/proto/uid/dest params. */
+type UrlFilters = Partial<Record<'name' | 'app' | 'proto' | 'uid' | 'dest', string>>;
+
 // URL builders for useQuery (which is keyed by URL). Ids stay strings.
 export const urls = {
-  historySummary: (r: TimeRange) => `/api/history/summary?${qs({ from: r.from, to: r.to })}`,
+  historySummary: (r: TimeRange, filters: UrlFilters = {}) => `/api/history/summary?${qs({ from: r.from, to: r.to, ...filters })}`,
   process: (pid: string, start: string) => `/api/process/${encodeURIComponent(pid)}/${encodeURIComponent(start)}`,
-  historyFlows: (r: TimeRange, dest?: string | null) => `/api/history/flows?${qs({ from: r.from, to: r.to, dest: dest || undefined })}`,
+  historyFlows: (r: TimeRange, filters: UrlFilters = {}) => `/api/history/flows?${qs({ from: r.from, to: r.to, ...filters })}`,
   liveFlows: (seconds: number) => `/api/live/flows?${qs({ seconds })}`,
+  // The finest step the server allows (~1500 buckets), so a zoom always sharpens: raw
+  // flows get 1 s buckets at a few minutes, not the 10 s default.
+  historyThroughput: (r: TimeRange, p: { by: string; dir: string; top: number; filters: UrlFilters }) =>
+    `/api/history/throughput?${qs({ from: r.from, to: r.to, step: Math.max(1, Math.ceil((r.to - r.from) / 1000 / 1500)), by: p.by, dir: p.dir, top: p.top, ...p.filters })}`,
 };
 
 export type { HistorySummary, ProcessInfo };

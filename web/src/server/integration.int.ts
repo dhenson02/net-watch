@@ -15,8 +15,12 @@ import type {
   LiveMeta,
   LiveSnapshotResponse,
   ProcessInfo,
+  ThroughputResponse,
 } from '../shared/api.ts';
+import { THROUGHPUT_OTHER } from '../shared/api.ts';
+import { parseRange } from './ch/range.ts';
 import { DISPLAY_IP } from './ch/sql.ts';
+import { alignRange, throughputQuery } from './ch/throughput.ts';
 import { config } from './config.ts';
 import { createClickHouse } from './db/clickhouse.ts';
 
@@ -132,6 +136,121 @@ test('history flows: bytes per destination, both tables, dest filter', async () 
   for (const q of ['dest=example.com:443', 'dest=1.2.3.4', 'limit=0', 'limit=2001', 'limit=x']) {
     assert.equal((await get(`/api/history/flows?${q}`)).status, 400, q);
   }
+});
+
+function assertThroughput(b: ThroughputResponse) {
+  assert.ok(b.t.length > 0);
+  assert.equal(b.from % (b.step * 1000), 0, 'from on a bucket start');
+  for (let i = 0; i < b.t.length; i++) assert.equal(b.t[i], b.from + i * b.step * 1000, 'contiguous buckets');
+  assert.ok(b.t.at(-1)! < b.to);
+  assert.deepEqual(Object.keys(b.tx).sort(), [...b.keys].sort());
+  assert.deepEqual(Object.keys(b.rx).sort(), [...b.keys].sort());
+  for (const k of b.keys) {
+    assert.equal(b.tx[k]!.length, b.t.length, `tx ${k} padded`);
+    assert.equal(b.rx[k]!.length, b.t.length, `rx ${k} padded`);
+    for (const v of [...b.tx[k]!, ...b.rx[k]!]) assert.ok(typeof v === 'number' && v >= 0);
+  }
+  const i = b.keys.indexOf(THROUGHPUT_OTHER);
+  assert.ok(i === -1 || i === b.keys.length - 1, 'other last');
+}
+
+/** Bytes back from kbps: Σ kbps × bucket seconds × 1000 / 8. */
+function bytesOf(b: ThroughputResponse, dir: 'tx' | 'rx'): number {
+  let sum = 0;
+  for (const k of b.keys) {
+    b[dir][k]!.forEach((v, i) => {
+      const secs = (Math.min(b.t[i]! + b.step * 1000, b.table === 'flows' ? b.to : Math.ceil(b.to / 60_000) * 60_000) - b.t[i]!) / 1000;
+      sum += (v * secs * 1000) / 8;
+    });
+  }
+  return sum;
+}
+
+test('history throughput: padded kbps per top key, both tables, filters, drill keys', async () => {
+  const now = Date.now();
+  const day = await get<ThroughputResponse>(`/api/history/throughput?from=${now - 86_400_000}&to=${now}`);
+  assert.equal(day.status, 200);
+  assert.equal(day.body.table, 'flows_1m');
+  assertThroughput(day.body);
+  assert.ok(day.body.keys.filter((k) => k !== THROUGHPUT_OTHER).length <= 8);
+
+  // Rates convert back to the summary's bytes over the same (bucket-aligned) range.
+  const sum = await get<HistorySummary>(`/api/history/summary?from=${day.body.from}&to=${now}`);
+  for (const [dir, want] of [
+    ['tx', sum.body.txBytes],
+    ['rx', sum.body.rxBytes],
+  ] as const) {
+    assert.ok(Math.abs(bytesOf(day.body, dir) - want) <= Math.max(1, want * 0.005), `${dir}: ${bytesOf(day.body, dir)} vs ${want}`);
+  }
+
+  // Ranked by the direction's total
+  const tx = await get<ThroughputResponse>(`/api/history/throughput?from=${now - 86_400_000}&to=${now}&dir=tx&top=5&by=name`);
+  assertThroughput(tx.body);
+  const ranked = tx.body.keys.filter((k) => k !== THROUGHPUT_OTHER).map((k) => tx.body.tx[k]!.reduce((a, b) => a + b, 0));
+  for (let i = 1; i < ranked.length; i++) assert.ok(ranked[i - 1]! >= ranked[i]! - 1e-6, 'largest tx first');
+  assert.ok(ranked.length <= 5);
+
+  // uid on the rollup (joined to processes) and on raw flows
+  const uid = await get<ThroughputResponse>(`/api/history/throughput?from=${now - 86_400_000}&to=${now}&by=uid`);
+  assertThroughput(uid.body);
+  for (const k of uid.body.keys) if (k !== THROUGHPUT_OTHER) assert.match(k, /^\d+$/);
+  const rawUid = await get<ThroughputResponse>(`/api/history/throughput?from=${now - 3_600_000}&to=${now}&by=uid`);
+  assert.equal(rawUid.body.table, 'flows');
+  assertThroughput(rawUid.body);
+
+  // Every key of every dimension works as its own filter (the drill-down).
+  for (const by of ['app', 'name', 'proto', 'uid', 'dest'] as const) {
+    const all = await get<ThroughputResponse>(`/api/history/throughput?from=${now - 86_400_000}&to=${now}&by=${by}&top=5`);
+    assert.equal(all.status, 200, by);
+    const key = all.body.keys.find((k) => k !== THROUGHPUT_OTHER);
+    if (!key) continue;
+    const one = await get<ThroughputResponse>(`/api/history/throughput?from=${now - 86_400_000}&to=${now}&by=${by}&${by}=${encodeURIComponent(key)}`);
+    assert.equal(one.status, 200, `${by}=${key}`);
+    assert.deepEqual(one.body.keys, [key], `${by}=${key}`);
+    const drilled = await get<ThroughputResponse>(`/api/history/throughput?from=${now - 86_400_000}&to=${now}&by=name&${by}=${encodeURIComponent(key)}`);
+    assert.equal(drilled.status, 200);
+    assert.ok(drilled.body.keys.length > 0, `name within ${by}=${key}`);
+  }
+
+  for (const q of ['by=raddr', 'by=toString(uid)', 'dir=up', 'top=4', 'top=21', 'uid=x', 'dest=host:1', `name=${'x'.repeat(300)}`]) {
+    assert.equal((await get(`/api/history/throughput?${q}`)).status, 400, q);
+  }
+});
+
+test('history throughput: the rollup query uses the minute key', async () => {
+  const now = Date.now();
+  const r = alignRange(parseRange({ from: String(now - 30 * 86_400_000), to: String(now) }, now));
+  assert.equal(r.table, 'flows_1m');
+  const ch = createClickHouse(config.clickhouse);
+  try {
+    for (const by of ['app', 'uid'] as const) {
+      const { sql, params } = throughputQuery(r, by, 'both', 8, {});
+      const rs = await ch.query({ query: `EXPLAIN indexes = 1 ${sql}`, query_params: params, format: 'TabSeparatedRaw' });
+      const plan = await rs.text();
+      assert.match(plan, /ReadFromMergeTree \(netwatch\.flows_1m\)/, by);
+      assert.match(plan, /PrimaryKey\s+Keys:\s+minute\s+Condition: [^\n]*\(minute in \(-Inf, \d+\]\)/, `${by}: primary key on minute`);
+    }
+  } finally {
+    await ch.close();
+  }
+});
+
+test('history filters apply to summary and flows', async () => {
+  const now = Date.now();
+  const from = now - 86_400_000;
+  const { body } = await get<HistoryFlowsResponse>(`/api/history/flows?from=${from}&to=${now}&limit=20`);
+  const top = body.flows[0];
+  if (!top) return;
+  const flows = await get<HistoryFlowsResponse>(`/api/history/flows?from=${from}&to=${now}&name=${encodeURIComponent(top.name)}&app=${encodeURIComponent(top.app)}`);
+  assert.equal(flows.status, 200);
+  for (const f of flows.body.flows) assert.deepEqual([f.name, f.app], [top.name, top.app]);
+  const all = await get<HistorySummary>(`/api/history/summary?from=${from}&to=${now}`);
+  const some = await get<HistorySummary>(`/api/history/summary?from=${from}&to=${now}&name=${encodeURIComponent(top.name)}`);
+  assert.equal(some.status, 200);
+  assert.ok(some.body.txBytes + some.body.rxBytes <= all.body.txBytes + all.body.rxBytes);
+  assert.ok(some.body.processes >= 1);
+  const uid = await get<HistorySummary>(`/api/history/summary?from=${from}&to=${now}&uid=0`);
+  assert.equal(uid.status, 200);
 });
 
 test('live meta: numbers or null', async () => {
