@@ -1,14 +1,20 @@
 import { urls, type HistorySummary } from '../api.ts';
+import { DEST_PARAM, HistoryFlowSankey } from '../charts/FlowSankey.tsx';
 import { fmtBytes, fmtDuration, fmtTime } from '../charts/format.ts';
+import { useSlots } from '../charts/useSlots.ts';
 import { Panel } from '../components/Panel.tsx';
 import { RangePicker } from '../components/RangePicker.tsx';
 import { useQuery } from '../hooks/useQuery.ts';
 import { useTimeRange } from '../hooks/useTimeRange.ts';
+import { setSearchParams, useSearchParam } from '../router.ts';
 
 export function HistoryPage() {
   const range = useTimeRange();
   const summary = useQuery<HistorySummary>(urls.historySummary(range));
   const s = summary.data;
+  const slots = useSlots();
+  const [destParam] = useSearchParam(DEST_PARAM, '');
+  const dest = destParam || null;
 
   return (
     <>
@@ -19,6 +25,17 @@ export function HistoryPage() {
       <p className="muted range-label">
         {fmtTime(range.from)} – {fmtTime(range.to)} ({fmtDuration(range.to - range.from)})
       </p>
+      {dest && (
+        <p className="filter-bar">
+          <span className="chip">
+            destination <code>{dest}</code>
+            <button type="button" className="chip-x" aria-label="Clear the destination filter" onClick={() => setSearchParams({ [DEST_PARAM]: null })}>
+              ×
+            </button>
+          </span>
+          <span className="muted">applies to the flow diagram</span>
+        </p>
+      )}
       <div className="panels">
         <Panel
           title="Totals"
@@ -33,6 +50,8 @@ export function HistoryPage() {
             <Stat label="Processes with traffic" value={s ? s.processes.toLocaleString() : '—'} />
           </div>
         </Panel>
+
+        <HistoryFlowSankey range={range} dest={dest} slots={slots} />
       </div>
     </>
   );

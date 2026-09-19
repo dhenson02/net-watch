@@ -1,10 +1,22 @@
 import type { FastifyInstance } from 'fastify';
-import type { HistoryIngest, HistorySummary } from '../../shared/api.ts';
+import type { HistoryFlowsResponse, HistoryIngest, HistorySummary } from '../../shared/api.ts';
 import { chQuery, clientGone } from '../ch/query.ts';
 import { parseRange, rangeInfo, rangeParams, timeFilter } from '../ch/range.ts';
+import { DEST_FILTER, DISPLAY_IP, parseDest } from '../ch/sql.ts';
 import type { ClickHouseClient } from '../db/clickhouse.ts';
+import { badRequest } from '../http-error.ts';
 
 type RangeQuery = { Querystring: Record<string, string | undefined> };
+
+const MAX_FLOW_ROWS = 2000;
+
+/** An optional integer query parameter in `min..max`. */
+function intInRange(raw: string | undefined, name: string, fallback: number, min: number, max: number): number {
+  if (raw === undefined || raw === '') return fallback;
+  const n = /^\d+$/.test(raw) ? Number(raw) : NaN;
+  if (!(n >= min && n <= max)) throw badRequest(`${name}: expected an integer in ${min}..${max}`);
+  return n;
+}
 
 export function historyRoutes(app: FastifyInstance, deps: { clickhouse: ClickHouseClient }) {
   const ch = deps.clickhouse;
@@ -22,6 +34,50 @@ export function historyRoutes(app: FastifyInstance, deps: { clickhouse: ClickHou
       clientGone(reply),
     );
     return { range: rangeInfo(r), txBytes: Number(row?.tx ?? 0), rxBytes: Number(row?.rx ?? 0), processes: Number(row?.n ?? 0) };
+  });
+
+  /**
+   * Bytes per (process name, proto, app, destination) over a range, largest
+   * first; the History page's Sankey. `id` is the instance of the name with
+   * the most traffic to that destination, for click-through.
+   */
+  app.get<RangeQuery>('/api/history/flows', async (req, reply): Promise<HistoryFlowsResponse> => {
+    const r = parseRange(req.query);
+    const limit = intInRange(req.query.limit, 'limit', 300, 1, MAX_FLOW_ROWS);
+    const dest = parseDest(req.query.dest);
+    // Raw flows up to 2 h (exact edges); beyond that the rollup, including the
+    // minute `from` falls in. Both fragments are constants.
+    const time =
+      r.table === 'flows'
+        ? timeFilter(r)
+        : 'minute >= toStartOfMinute(fromUnixTimestamp64Milli({from:Int64})) AND minute < fromUnixTimestamp64Milli({to:Int64})';
+    type Row = { name: string; proto: string; app: string; ip: string; rport: number; tx: string; rx: string; id: string };
+    const rows = await chQuery<Row>(
+      ch,
+      req.log,
+      `SELECT name, proto, app, ${DISPLAY_IP} AS ip, rport,
+              sum(itx) AS tx, sum(irx) AS rx, argMax(iid, itx + irx) AS id
+       FROM (
+         SELECT name, proto, app, raddr, rport,
+                concat(toString(pid), ':', toString(proc_start)) AS iid,
+                sum(tx_bytes) AS itx, sum(rx_bytes) AS irx
+         FROM ${r.table}
+         WHERE ${time}${dest ? ` AND ${DEST_FILTER}` : ''}
+         GROUP BY name, proto, app, raddr, rport, pid, proc_start
+       )
+       GROUP BY name, proto, app, raddr, rport
+       HAVING tx + rx > 0
+       ORDER BY tx + rx DESC, name, app, ip, rport
+       LIMIT {limit:UInt32}`,
+      { ...rangeParams(r), ...dest, limit: limit + 1 },
+      clientGone(reply),
+    );
+    const truncated = rows.length > limit;
+    return {
+      range: rangeInfo(r),
+      flows: rows.slice(0, limit).map((row) => ({ ...row, tx: Number(row.tx), rx: Number(row.rx) })),
+      truncated,
+    };
   });
 
   /**

@@ -64,8 +64,10 @@ the background, and `/api/health` reports the state of each backend.
 | `GET /api/live/series?seconds=900` | `CompactTick[]` from the hub's ring buffer, oldest first (`seconds` 1..86400) |
 | `GET /api/live/events` | SSE: `hello` `{latestTs}` on connect, then one `tick` (a `CompactTick`) per collector tick, `:keepalive` every 15 s |
 | `GET /api/live/snapshot` | the latest snapshot's process list (`LiveSnapshotResponse`: rates, totals, flow count, username; cmdline cut to 300 chars) from memory; 503 until the first tick |
+| `GET /api/live/flows?seconds=10` | flows of the hub's last ticks (`seconds` 1..30; the hub keeps the full `flows` of 30 ticks) grouped by process name, proto, app, remote ip and port: mean kbps per tick, largest first (`LiveFlowsResponse`); the live Sankey |
 | `GET /api/live/meta` | `netwatch:meta` (last tick, interval, drops) plus the sizes of `netwatch:alive` and `netwatch:ended`; 503 while Redis is down |
 | `GET /api/history/summary?from&to` | payload bytes and process count over a range |
+| `GET /api/history/flows?from&to&limit=300&dest` | bytes per (process name, proto, app, ip, port) over a range, largest first, `limit` 1..2000 (`truncated` says whether more matched); `dest=ip:port` keeps one destination. Raw `flows` up to 2 h, else `flows_1m` from the minute `from` falls in. Each row's `id` is the busiest instance of the name, for click-through |
 | `GET /api/history/ingest` | newest `flows.ts` and the row count of the last minute, to show whether the collector's ClickHouse sink keeps up |
 | `GET /api/process/:pid/:start` | one process instance from `processes`; 404 if unknown |
 
@@ -96,7 +98,8 @@ src/server/    Fastify API + static hosting of dist/client (SPA fallback)
 src/client/    React SPA (Vite root)
   router.ts    usePath / navigate / useSearchParam / Link; all page state is in the URL
   pages/       Live, History, Process
-  charts/      ECharts registration, <EChart>, palette, formatters, themes
+  charts/      ECharts registration, <EChart>, palette (incl. fixed app hues), formatters, themes,
+               FlowSankey (Live + History panels) and its pure graph builder buildSankey
   live/        Live page sections (HealthStrip, LiveThroughput + its pure series builder useLiveThroughput,
                TopTalkers + its pure row logic topTalkers.ts, useSnapshot)
   components/  Panel, StatTile, Sparkline (inline SVG), RangePicker, SegmentedControl, Toggle, StatusPill
@@ -104,7 +107,7 @@ src/client/    React SPA (Vite root)
 src/shared/    API response types, imported by both sides
 ```
 
-Routes: `/` → `/live` (`?live_win=5m|15m|max&live_by=name|id&sort=[-]key&q=filter&idle=show`), `/history?from&to`, `/process/:pid/:start`.
+Routes: `/` → `/live` (`?live_win=5m|15m|max&live_by=name|id&sort=[-]key&q=filter&idle=show&flow_dir=tx|rx`), `/history?from&to&filter.dest=ip:port&flow_dir=tx|rx`, `/process/:pid/:start`.
 
 Conventions:
 

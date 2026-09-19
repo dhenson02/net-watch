@@ -25,6 +25,8 @@ export interface TimeRange {
 export const urls = {
   historySummary: (r: TimeRange) => `/api/history/summary?${qs({ from: r.from, to: r.to })}`,
   process: (pid: string, start: string) => `/api/process/${encodeURIComponent(pid)}/${encodeURIComponent(start)}`,
+  historyFlows: (r: TimeRange, dest?: string | null) => `/api/history/flows?${qs({ from: r.from, to: r.to, dest: dest || undefined })}`,
+  liveFlows: (seconds: number) => `/api/live/flows?${qs({ seconds })}`,
 };
 
 export type { HistorySummary, ProcessInfo };

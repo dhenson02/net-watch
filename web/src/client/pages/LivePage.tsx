@@ -1,4 +1,5 @@
 import { fmtDuration, fmtTime } from '../charts/format.ts';
+import { LiveFlowSankey } from '../charts/FlowSankey.tsx';
 import { useSlots } from '../charts/useSlots.ts';
 import { Panel } from '../components/Panel.tsx';
 import { useLive, type LiveStatus } from '../hooks/useLive.ts';
@@ -45,6 +46,8 @@ export function LivePage() {
         </Panel>
 
         <TopTalkers />
+
+        <LiveFlowSankey slots={slots} />
       </div>
     </>
   );

@@ -1,10 +1,10 @@
 import type { ServerResponse } from 'node:http';
 import type { FastifyInstance } from 'fastify';
-import type { CompactTick, LiveHello, LiveMeta, LiveSnapshot, LiveSnapshotResponse } from '../../shared/api.ts';
+import type { CompactTick, LiveFlowsResponse, LiveHello, LiveMeta, LiveSnapshot, LiveSnapshotResponse } from '../../shared/api.ts';
 import type { Redis } from '../db/redis.ts';
 import { HttpError } from '../http-error.ts';
-import { snapshotRows } from '../live/compact.ts';
-import type { LiveHub } from '../live/hub.ts';
+import { aggregateFlows, snapshotRows } from '../live/compact.ts';
+import { RECENT_FLOWS, type LiveHub } from '../live/hub.ts';
 import { withTimeout } from '../timeout.ts';
 import type { Users } from '../users.ts';
 
@@ -33,6 +33,22 @@ export function liveRoutes(app: FastifyInstance, deps: { hub: LiveHub; redis: Re
     if (!snap) throw new HttpError(503, 'no live data yet');
     if (reduced?.snap !== snap) reduced = { snap, res: snapshotRows(snap, (uid) => users.name(uid)) };
     return { ...reduced.res, serverTimeMs: Date.now() };
+  });
+
+  // Polled every 2 s by the live Sankey, so it is not request-logged. The
+  // aggregate is kept until the next tick (every tab asks for the same one).
+  let flowsCache: { ts: number; seconds: number; res: LiveFlowsResponse } | null = null;
+  app.get<{ Querystring: { seconds?: string } }>('/api/live/flows', { logLevel: 'warn' }, async (req): Promise<LiveFlowsResponse> => {
+    const raw = req.query.seconds ?? '10';
+    const seconds = /^\d+$/.test(raw) ? Number(raw) : NaN;
+    if (!(seconds >= 1 && seconds <= RECENT_FLOWS)) throw new HttpError(400, `seconds: expected an integer in 1..${RECENT_FLOWS}`);
+    const recent = hub.recentFlows(seconds);
+    const ts = recent.at(-1)?.ts ?? null;
+    if (ts === null) return { ts, ticks: 0, flows: [] };
+    if (flowsCache?.ts !== ts || flowsCache.seconds !== seconds) {
+      flowsCache = { ts, seconds, res: { ts, ticks: recent.length, flows: aggregateFlows(recent.map((r) => r.flows)) } };
+    }
+    return flowsCache.res;
   });
 
   // Polled every 5 s by the health strip, so it is not request-logged.

@@ -4,7 +4,18 @@
 import assert from 'node:assert/strict';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { after, before, test } from 'node:test';
-import type { CompactTick, HealthResponse, HistoryIngest, HistorySummary, LiveMeta, LiveSnapshotResponse, ProcessInfo } from '../shared/api.ts';
+import type {
+  CompactTick,
+  FlowAgg,
+  HealthResponse,
+  HistoryFlowsResponse,
+  HistoryIngest,
+  HistorySummary,
+  LiveFlowsResponse,
+  LiveMeta,
+  LiveSnapshotResponse,
+  ProcessInfo,
+} from '../shared/api.ts';
 import { DISPLAY_IP } from './ch/sql.ts';
 import { config } from './config.ts';
 import { createClickHouse } from './db/clickhouse.ts';
@@ -70,6 +81,56 @@ test('live snapshot: process rows, ids kept as strings', async () => {
     assert.ok(p.cmdline.length <= 300, 'cmdline truncated');
     assert.ok(p.user === null || typeof p.user === 'string');
     assert.equal(typeof p.nFlows, 'number');
+  }
+});
+
+function assertFlow(f: FlowAgg) {
+  for (const k of ['name', 'proto', 'app', 'ip', 'id'] as const) assert.equal(typeof f[k], 'string', k);
+  for (const k of ['rport', 'tx', 'rx'] as const) assert.equal(typeof f[k], 'number', k);
+  assert.match(f.id, /^\d+:\d+$/);
+  assert.ok(!f.ip.startsWith('::ffff:'), 'IPv4 shown plain');
+}
+
+test('live flows: mean kbps per (name, proto, app, ip, port), largest first', async () => {
+  const { status, body } = await get<LiveFlowsResponse>('/api/live/flows?seconds=10');
+  assert.equal(status, 200);
+  assert.equal(typeof body.ticks, 'number');
+  assert.ok(body.ticks <= 30);
+  assert.equal(body.ts === null, body.ticks === 0);
+  for (const f of body.flows) assertFlow(f);
+  for (let i = 1; i < body.flows.length; i++) assert.ok(body.flows[i - 1]!.tx + body.flows[i - 1]!.rx >= body.flows[i]!.tx + body.flows[i]!.rx);
+  assert.equal((await get('/api/live/flows?seconds=31')).status, 400);
+  assert.equal((await get('/api/live/flows?seconds=0')).status, 400);
+});
+
+test('history flows: bytes per destination, both tables, dest filter', async () => {
+  const now = Date.now();
+  const week = await get<HistoryFlowsResponse>(`/api/history/flows?from=${now - 7 * 86_400_000}&to=${now}&limit=50`);
+  assert.equal(week.status, 200);
+  assert.equal(week.body.range.table, 'flows_1m');
+  assert.ok(week.body.flows.length <= 50);
+  assert.equal(typeof week.body.truncated, 'boolean');
+  for (const f of week.body.flows) assertFlow(f);
+  for (let i = 1; i < week.body.flows.length; i++) {
+    const [a, b] = [week.body.flows[i - 1]!, week.body.flows[i]!];
+    assert.ok(a.tx + a.rx >= b.tx + b.rx, 'largest first');
+  }
+
+  const raw = await get<HistoryFlowsResponse>(`/api/history/flows?from=${now - 3_600_000}&to=${now}`);
+  assert.equal(raw.status, 200);
+  assert.equal(raw.body.range.table, 'flows');
+
+  const top = week.body.flows[0];
+  if (top) {
+    const dest = top.ip.includes(':') ? `[${top.ip}]:${top.rport}` : `${top.ip}:${top.rport}`;
+    const one = await get<HistoryFlowsResponse>(`/api/history/flows?from=${now - 7 * 86_400_000}&to=${now}&dest=${encodeURIComponent(dest)}`);
+    assert.equal(one.status, 200);
+    assert.ok(one.body.flows.length > 0);
+    for (const f of one.body.flows) assert.deepEqual([f.ip, f.rport], [top.ip, top.rport]);
+  }
+
+  for (const q of ['dest=example.com:443', 'dest=1.2.3.4', 'limit=0', 'limit=2001', 'limit=x']) {
+    assert.equal((await get(`/api/history/flows?${q}`)).status, 400, q);
   }
 });
 

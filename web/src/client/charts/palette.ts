@@ -28,6 +28,22 @@ export const OTHER: Record<Scheme, string> = { light: '#898781', dark: '#898781'
 export const TX: Record<Scheme, string> = { light: '#eb6834', dark: '#d95926' };
 export const RX: Record<Scheme, string> = { light: '#2a78d6', dark: '#3987e5' };
 
+/**
+ * Fixed hues for application protocols (the Sankey's middle layer), so HTTPS
+ * looks the same on every page and every refresh. Indexes into CATEGORICAL;
+ * apps not listed get APP_NEUTRAL, `unknown` gets OTHER.
+ */
+const APP_SLOTS: Record<string, number> = { HTTPS: 6, QUIC: 2, DNS: 3, SSH: 7, HTTP: 4 };
+export const APP_NEUTRAL: Record<Scheme, string> = { light: '#5f7187', dark: '#7d8ea3' };
+
+/** Color of an app label; a transport suffix (`DNS/UDP`) is ignored. */
+export function appColor(label: string, scheme: Scheme): string {
+  const app = label.replace(/\/(TCP|UDP)$/, '');
+  if (app === 'unknown') return OTHER[scheme];
+  const slot = APP_SLOTS[app];
+  return slot === undefined ? APP_NEUTRAL[scheme] : CATEGORICAL[scheme][slot]!;
+}
+
 /** Color for a slot from SlotAssigner; -1 (no free slot) is "other". */
 export function slotColor(slot: number, scheme: Scheme): string {
   return slot >= 0 && slot < SLOTS ? CATEGORICAL[scheme][slot]! : OTHER[scheme];

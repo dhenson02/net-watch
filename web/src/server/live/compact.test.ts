@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import type { LiveSnapshot } from '../../shared/api.ts';
-import { CMDLINE_MAX, compactTick, parseSnapshot, snapshotRows } from './compact.ts';
+import { aggregateFlows, CMDLINE_MAX, compactTick, parseSnapshot, snapshotRows } from './compact.ts';
 import { compareIds } from './hub.ts';
 
 // The collector's `sample_tick()` (net-watch/src/model.rs) as serialized to
@@ -60,6 +60,21 @@ test('counts live processes, lists only active ones, sums apps over flows', () =
   assert.deepEqual(t.procs.map((p) => p.name), ['curl', 'ended']); // idle has no traffic
   assert.equal(t.procs[1]!.tx, 0); // rounded to 0.01 kbps
   assert.deepEqual(t.apps, { HTTPS: [12, 512], DNS: [0.1, 0.2] });
+});
+
+test('averages flows over ticks by (name, proto, app, ip, port)', () => {
+  const [f] = parseSnapshot(sample).flows;
+  const a = { ...f!, tx_kbps: 10, rx_kbps: 100 };
+  const t1 = [a, { ...a, pid: 7, start_ns: '99', tx_kbps: 30, rx_kbps: 0 }, { ...a, app: 'DNS', proto: 'UDP', rport: 53, tx_kbps: 1, rx_kbps: 1 }];
+  const t2 = [{ ...a, tx_kbps: 20, rx_kbps: 200 }];
+  const rows = aggregateFlows([t1, t2]);
+  assert.deepEqual(rows, [
+    // curl/HTTPS: (10 + 30 + 20) / 2 ticks and (100 + 200) / 2; pid 4242 moved 330, pid 7 30
+    { name: 'curl', proto: 'TCP', app: 'HTTPS', ip: '93.184.216.34', rport: 443, tx: 30, rx: 150, id: '4242:1' },
+    // absent from the second tick: counts as 0 there
+    { name: 'curl', proto: 'UDP', app: 'DNS', ip: '93.184.216.34', rport: 53, tx: 0.5, rx: 0.5, id: '4242:1' },
+  ]);
+  assert.deepEqual(aggregateFlows([]), []);
 });
 
 test('orders stream ids numerically', () => {

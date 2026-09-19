@@ -2,7 +2,7 @@
 // never from 'echarts' itself, so the bundle only carries what is listed.
 // A chart that needs another series type or component adds it below.
 import * as echarts from 'echarts/core';
-import { BarChart, LineChart } from 'echarts/charts';
+import { BarChart, LineChart, SankeyChart } from 'echarts/charts';
 import {
   AriaComponent,
   DataZoomComponent,
@@ -18,6 +18,7 @@ import { CanvasRenderer } from 'echarts/renderers';
 echarts.use([
   LineChart,
   BarChart,
+  SankeyChart,
   AriaComponent,
   DataZoomComponent,
   GraphicComponent,

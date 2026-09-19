@@ -191,3 +191,42 @@ export interface ProcessInfo {
   tx_total: number;
   rx_total: number;
 }
+
+// ---------------------------------------------------------------------------
+// Flows (the process → app → destination Sankey)
+
+/**
+ * Traffic of one (process name, proto, app, remote ip, remote port). `tx`/`rx`
+ * are mean kbps in live mode and bytes in history mode.
+ */
+export interface FlowAgg {
+  name: string;
+  proto: string;
+  app: string;
+  /** Plain IPv4 or IPv6 text; an unspecified address with port 0 is an unknown peer. */
+  ip: string;
+  rport: number;
+  tx: number;
+  rx: number;
+  /** `pid:start_ns` of this row's busiest instance of `name`, for click-through. */
+  id: string;
+}
+
+/** `/api/live/flows`: flows averaged over the hub's last ticks. */
+export interface LiveFlowsResponse {
+  /** Newest tick averaged, null before the first one. */
+  ts: number | null;
+  /** Ticks averaged over. */
+  ticks: number;
+  /** `tx`/`rx` are mean kbps over those ticks. */
+  flows: FlowAgg[];
+}
+
+/** `/api/history/flows`: byte totals over a range, largest first. */
+export interface HistoryFlowsResponse {
+  range: RangeInfo;
+  /** `tx`/`rx` are bytes. */
+  flows: FlowAgg[];
+  /** More rows matched than `limit`; the smallest were left out. */
+  truncated: boolean;
+}

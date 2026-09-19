@@ -1,4 +1,4 @@
-import type { CompactTick, LiveSnapshot, LiveSnapshotResponse } from '../../shared/api.ts';
+import type { CompactTick, FlowAgg, LiveFlow, LiveSnapshot, LiveSnapshotResponse } from '../../shared/api.ts';
 
 /** Longer cmdlines are cut in the live table; the process page reads the full one. */
 export const CMDLINE_MAX = 300;
@@ -58,6 +58,45 @@ export function compactTick(s: LiveSnapshot): CompactTick {
     procs,
     apps,
   };
+}
+
+/**
+ * Flows of several ticks summed by (name, proto, app, raddr, rport) and
+ * divided by the number of ticks: mean kbps, as the live Sankey shows. A flow
+ * absent from a tick counts as 0 for it. `id` is the busiest instance of the
+ * name within each row. Largest first.
+ */
+export function aggregateFlows(ticks: readonly (readonly LiveFlow[])[]): FlowAgg[] {
+  const rows = new Map<string, FlowAgg & { perId: Map<string, number> }>();
+  for (const flows of ticks) {
+    for (const f of flows) {
+      const key = `${f.name}\u0000${f.proto}\u0000${f.app}\u0000${f.raddr}\u0000${f.rport}`;
+      let r = rows.get(key);
+      if (!r) {
+        r = { name: f.name, proto: f.proto, app: f.app, ip: f.raddr, rport: f.rport, tx: 0, rx: 0, id: '', perId: new Map() };
+        rows.set(key, r);
+      }
+      r.tx += f.tx_kbps;
+      r.rx += f.rx_kbps;
+      const id = `${f.pid}:${f.start_ns}`;
+      r.perId.set(id, (r.perId.get(id) ?? 0) + f.tx_kbps + f.rx_kbps);
+    }
+  }
+  const n = Math.max(1, ticks.length);
+  const out: FlowAgg[] = [];
+  for (const { perId, ...r } of rows.values()) {
+    let best = -1;
+    for (const [id, sum] of perId) {
+      if (sum > best) {
+        best = sum;
+        r.id = id;
+      }
+    }
+    r.tx = r2(r.tx / n);
+    r.rx = r2(r.rx / n);
+    out.push(r);
+  }
+  return out.sort((a, b) => b.tx + b.rx - (a.tx + a.rx));
 }
 
 /** A snapshot reduced to its process list, for the top-talkers table. */

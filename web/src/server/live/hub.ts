@@ -1,7 +1,7 @@
 import { once } from 'node:events';
 import { setTimeout as sleep } from 'node:timers/promises';
 import type { FastifyBaseLogger } from 'fastify';
-import type { CompactTick, LiveSnapshot } from '../../shared/api.ts';
+import type { CompactTick, LiveFlow, LiveSnapshot } from '../../shared/api.ts';
 import type { Redis } from '../db/redis.ts';
 import { compactTick, parseSnapshot } from './compact.ts';
 
@@ -10,6 +10,8 @@ const PAGE = 300;
 const BLOCK_MS = 5000;
 /** A tick this many intervals after the previous one means ticks are missing. */
 const GAP_INTERVALS = 2.5;
+/** Full `flows` arrays kept for /api/live/flows (the live Sankey). */
+export const RECENT_FLOWS = 30;
 
 type Entry = { id: string; message: Record<string, string> };
 export type TickListener = (tick: CompactTick) => void;
@@ -32,6 +34,8 @@ export class LiveHub {
   #capacity: number;
   #ring: CompactTick[] = [];
   #latest: LiveSnapshot | null = null;
+  /** The `flows` of the last RECENT_FLOWS ticks, oldest first. */
+  #recent: { ts: number; flows: LiveFlow[] }[] = [];
   #listeners = new Set<TickListener>();
   /** Last stream id ingested; null until the backfill has run. */
   #lastId: string | null = null;
@@ -69,6 +73,16 @@ export class LiveHub {
     let i = this.#ring.length;
     while (i > 0 && this.#ring[i - 1]!.ts > from) i--;
     return this.#ring.slice(i);
+  }
+
+  /** `flows` of the ticks in the last `seconds` (at most RECENT_FLOWS ticks), oldest first. */
+  recentFlows(seconds: number): { ts: number; flows: LiveFlow[] }[] {
+    const newest = this.#recent.at(-1);
+    if (!newest) return [];
+    const from = newest.ts - seconds * 1000;
+    let i = this.#recent.length;
+    while (i > 0 && this.#recent[i - 1]!.ts > from) i--;
+    return this.#recent.slice(i);
   }
 
   latest(): LiveSnapshot | null {
@@ -118,6 +132,7 @@ export class LiveHub {
       end = `(${page.at(-1)!.id}`;
     }
     this.#ring = [];
+    this.#recent = [];
     for (let i = entries.length - 1; i >= 0; i--) this.#ingest(entries[i]!, false);
     this.#lastId = entries[0]?.id ?? '0-0';
     this.#log.info({ ticks: this.#ring.length, ms: Math.round(performance.now() - start) }, 'live backfill loaded');
@@ -162,6 +177,8 @@ export class LiveHub {
     this.#latest = snap;
     this.#ring.push(tick);
     if (this.#ring.length > this.#capacity) this.#ring.splice(0, this.#ring.length - this.#capacity);
+    this.#recent.push({ ts: snap.ts_ms, flows: snap.flows });
+    if (this.#recent.length > RECENT_FLOWS) this.#recent.shift();
     if (!notify) return;
     for (const fn of this.#listeners) {
       try {
