@@ -6,6 +6,23 @@ import { fmtDuration } from '../charts/format.ts';
 
 /** URL param of the Process page: `beacon_scope=name` shows every instance of the name. */
 export const BEACON_SCOPE_PARAM = 'beacon_scope';
+/** `?beacon_ip=`: an address to highlight on the strip (set by the new-destinations list, 17). */
+export const BEACON_FOCUS_PARAM = 'beacon_ip';
+/** The Beaconing panel's element id, a scroll target. */
+export const BEACONS_PANEL_ID = 'beacons';
+
+/** Row indexes of the destinations at address `ip` (any port); empty without a focus. */
+export function focusRows(dests: readonly Pick<BeaconDest, 'ip'>[], ip: string | null): number[] {
+  if (!ip) return [];
+  const out: number[] = [];
+  dests.forEach((d, i) => d.ip === ip && out.push(i));
+  return out;
+}
+
+/** The first visible row of a scrolled strip that shows `row` (near the top) with `visible` rows. */
+export function scrollStart(row: number, total: number, visible: number): number {
+  return Math.max(0, Math.min(row - 2, total - visible));
+}
 
 export const parseBeaconScope = (raw: string | null): BeaconScope => (raw === 'name' ? 'name' : 'instance');
 

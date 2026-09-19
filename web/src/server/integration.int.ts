@@ -20,6 +20,7 @@ import type {
   LiveFlowsResponse,
   LiveMeta,
   LiveSnapshotResponse,
+  NewDestsResponse,
   ProcessCallsResponse,
   ProcessInfo,
   ScatterResponse,
@@ -1037,4 +1038,74 @@ test('beacons: ticks per destination match the table, periodic first, ranges cap
   assert.equal((await get('/api/history/beacons')).status, 400);
   assert.equal((await get('/api/history/beacons?name=x&from=5&to=1')).status, 400);
   assert.equal((await get('/api/process/x/1/beacons')).status, 400);
+});
+
+test('new destinations: first contacts match the rollup, exclusions counted, options and bad params', async () => {
+  const now = Date.now();
+  const range = `from=${now - 7 * 86_400_000}&to=${now}`;
+  // Warm-up shown: on a young table everything is in it.
+  const all = await get<NewDestsResponse>(`/api/history/new-dests?${range}&warmup=1`);
+  assert.equal(all.status, 200);
+  assert.equal(all.body.ports, false);
+  const ds = all.body.dests;
+  assert.ok(ds.length <= 500);
+  for (let i = 1; i < ds.length; i++) assert.ok(ds[i - 1]!.firstMs <= ds[i]!.firstMs, 'oldest first');
+  for (const d of ds) {
+    assert.ok(d.firstMs >= all.body.from - 60_000 && d.firstMs < all.body.to, d.dest);
+    assert.ok(d.ip !== '0.0.0.0' && d.ip !== '::', 'no-peer receivers never count');
+    assert.equal(d.loopback, false, 'loopback hidden by default');
+    assert.match(d.id, /^\d+:\d+$/);
+    assert.ok(d.firstHourBytes >= 0);
+  }
+  const plain = await get<NewDestsResponse>(`/api/history/new-dests?${range}`);
+  assert.equal(plain.status, 200);
+  for (const d of plain.body.dests) assert.equal(d.warmup, false);
+  if (all.body.warmupUntil !== null) {
+    // Without warm-up, exactly the warm-up rows are left out and counted.
+    const warm = ds.filter((d) => d.warmup).length;
+    if (!all.body.truncated && !plain.body.truncated) {
+      assert.equal(plain.body.dests.length, ds.length - warm);
+      assert.equal(plain.body.hidden.warmup, warm);
+    }
+  }
+
+  // A sample checked against flows_1m: nothing of (name, ip) before the first contact.
+  const ch = createClickHouse(config.clickhouse);
+  try {
+    for (const d of ds.slice(0, 5)) {
+      const rs = await ch.query({
+        query: `SELECT toUnixTimestamp(min(minute)) AS m FROM flows_1m WHERE name = {name:String} AND raddr = toIPv6({ip:String})`,
+        query_params: { name: d.name, ip: d.ip },
+        format: 'JSONEachRow',
+      });
+      const [row] = await rs.json<{ m: number }>();
+      assert.equal(Number(row!.m) * 1000, d.firstMs, `${d.name} ${d.dest}`);
+    }
+  } finally {
+    await ch.close();
+  }
+
+  const lo = await get<NewDestsResponse>(`/api/history/new-dests?${range}&warmup=1&loopback=1`);
+  assert.equal(lo.body.hidden.loopback, 0);
+  if (!lo.body.truncated && !all.body.truncated) assert.equal(lo.body.dests.length, ds.length + all.body.hidden.loopback);
+  for (const d of lo.body.dests) if (d.loopback) assert.ok(d.ip.startsWith('127.') || d.ip === '::1', d.ip);
+
+  const first = ds[0];
+  if (first) {
+    const named = await get<NewDestsResponse>(`/api/history/new-dests?${range}&warmup=1&name=${encodeURIComponent(first.name)}`);
+    assert.ok(named.body.dests.length > 0);
+    for (const d of named.body.dests) assert.equal(d.name, first.name);
+    const ports = await get<NewDestsResponse>(`/api/history/new-dests?${range}&warmup=1&ports=1&names=${encodeURIComponent(first.name)}`);
+    assert.equal(ports.body.ports, true);
+    // Per port, an address can only gain keys.
+    assert.ok(ports.body.dests.length >= named.body.dests.length);
+    const one = await get<NewDestsResponse>(`/api/history/new-dests?${range}&warmup=1&limit=1`);
+    assert.equal(one.body.dests.length, 1);
+    assert.equal(one.body.truncated, ds.length > 1);
+  }
+  const none = await get<NewDestsResponse>(`/api/history/new-dests?${range}&warmup=1&name=no-such-proc`);
+  assert.deepEqual(none.body.dests, []);
+  for (const q of ['limit=0', 'limit=2001', 'ports=2', 'warmup=yes', 'from=5&to=4']) {
+    assert.equal((await get(`/api/history/new-dests?${q}`)).status, 400, q);
+  }
 });

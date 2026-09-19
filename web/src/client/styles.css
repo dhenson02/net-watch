@@ -813,6 +813,34 @@ input:focus-visible {
   font-size: 11px;
 }
 
+/* New-destination marker track under the History throughput (17) */
+.newdest-track {
+  margin-top: -2px;
+}
+
+.newdest-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  padding-left: 64px;
+  font-size: 11px;
+}
+
+.newdest-foot > .muted {
+  flex: 1 1 240px;
+}
+
+.newdest-toggles {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+
+.newdest-table tbody tr {
+  cursor: pointer;
+}
+
 /* Unknown-protocol share track under the History throughput (16) */
 .unknown-track {
   margin-top: 2px;
@@ -1133,6 +1161,11 @@ input:focus-visible {
   font-weight: 600;
   line-height: 16px;
   vertical-align: 1px;
+}
+
+.badge-muted {
+  background: var(--chart-grid);
+  color: var(--muted);
 }
 
 .link-button {

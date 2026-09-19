@@ -683,3 +683,50 @@ export interface BeaconsResponse {
   /** The range was longer than BEACON_MAX_SPAN_MS allows and was cut to its last part. */
   capped: boolean;
 }
+
+// ---------------------------------------------------------------------------
+// New-destination markers (17): a program's first contact with an address
+
+/**
+ * A destination first contacted by a program (by name, not instance) in the
+ * range: no earlier row of (name, ip) anywhere in `flows_1m`, or of
+ * (name, ip, port) when keyed by port.
+ */
+export interface NewDest {
+  name: string;
+  /** Plain IPv4, or IPv6. */
+  ip: string;
+  /** The key's port when keyed by port; else the port of the first contact. */
+  port: number;
+  /** `ip:port`, IPv6 as `[addr]:port`: the History `filter.dest` value. */
+  dest: string;
+  /** App and proto of the first contact. */
+  app: string;
+  proto: string;
+  /** The first contact's minute (ms): `flows_1m` has minute resolution. */
+  firstMs: number;
+  /** tx + rx to the destination in [firstMs, firstMs + 1 h), every instance of the name. */
+  firstHourBytes: number;
+  /** `pid:start_ns` of the instance that made the first contact, for the process page. */
+  id: string;
+  pid: number;
+  /** 127.0.0.0/8 or ::1 (only returned with `loopback=1`). */
+  loopback: boolean;
+  /** First seen within 24 h of the table's first minute (only returned with `warmup=1`). */
+  warmup: boolean;
+}
+
+/** `/api/history/new-dests`: first contacts in the range, oldest first. */
+export interface NewDestsResponse {
+  from: number;
+  to: number;
+  /** Keyed by (name, ip, port) rather than (name, ip). */
+  ports: boolean;
+  dests: NewDest[];
+  /** More matched than `limit`; the latest were left out. */
+  truncated: boolean;
+  /** First contacts in the range left out by the loopback and warm-up exclusions. */
+  hidden: { loopback: number; warmup: number };
+  /** The end of the warm-up (the table's first minute + 24 h), ms; null while the table is empty. */
+  warmupUntil: number | null;
+}

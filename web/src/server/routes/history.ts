@@ -13,6 +13,7 @@ import {
   type HistorySummary,
   type LifecycleResponse,
   type LifetimesResponse,
+  type NewDestsResponse,
   type ScatterResponse,
   type ThroughputResponse,
   type TreemapResponse,
@@ -24,6 +25,16 @@ import { buildBytesPerCall, bytesPerCallQuery, parseBpcBy, parseBpcDir, parseIns
 import { buildHeatmap, heatmapQuery, parseHeatRange, parseMetric, parseSplit, sampleCounts, type HeatmapRow } from '../ch/heatmap.ts';
 import { LIFECYCLE_LIMIT_DEFAULT, LIFECYCLE_LIMIT_MAX, lifecycleQuery, parseNames, toLifecycleProc, type LifecycleRow } from '../ch/lifecycle.ts';
 import { LIFETIMES_LIMIT_DEFAULT, LIFETIMES_LIMIT_MAX, lifetimesQuery, toLifetimeBar, type LifetimeRow } from '../ch/lifetimes.ts';
+import {
+  buildNewDests,
+  firstHourQuery,
+  NEW_DESTS_LIMIT_DEFAULT,
+  NEW_DESTS_LIMIT_MAX,
+  NEW_DESTS_SLOW_MS,
+  newDestsQuery,
+  type FirstHourRow,
+  type NewDestRow,
+} from '../ch/newDests.ts';
 import { chQuery, clientGone } from '../ch/query.ts';
 import { parseRange, rangeInfo, rangeParams, timeFilter } from '../ch/range.ts';
 import {
@@ -355,6 +366,43 @@ export function historyRoutes(app: FastifyInstance, deps: { clickhouse: ClickHou
     const { sql, params } = beaconsQuery({ scope: 'name', name, from: r.from, to: r.to, limit: BEACON_DEST_LIMIT + 1 });
     const rows = await chQuery<BeaconRow>(ch, req.log, sql, params, clientGone(reply));
     return buildBeacons(rows, { ...r, scope: 'name' }, BEACON_DEST_LIMIT);
+  });
+
+  /**
+   * New destinations (17): each (process name, remote address) whose first
+   * row anywhere in `flows_1m` lies in the range, oldest first, with the
+   * bytes of its first hour. `ports=1` keys by the port too. Addresses with
+   * no peer (`0.0.0.0`, `::`) never count; loopback (`loopback=1`) and first
+   * contacts within 24 h of the table's first minute (`warmup=1`) are left
+   * out unless asked for, and counted in `hidden`. `name` or `names`
+   * (comma-separated) narrow it; `limit` 1..2000 (default 500). Phase 1: both
+   * queries scan the whole rollup; a slow answer logs a warning.
+   */
+  app.get<RangeQuery>('/api/history/new-dests', async (req, reply): Promise<NewDestsResponse> => {
+    const { from, to } = parseRange(req.query);
+    const limit = intInRange(req.query.limit, 'limit', NEW_DESTS_LIMIT_DEFAULT, 1, NEW_DESTS_LIMIT_MAX);
+    const { name } = parseFilters({ name: req.query.name });
+    const listed = parseNames(req.query.names);
+    const names = name !== undefined ? [...new Set([name, ...(listed ?? [])])] : listed;
+    const flag = (k: string) => {
+      const v = req.query[k];
+      if (v === undefined || v === '' || v === '0') return false;
+      if (v === '1') return true;
+      throw badRequest(`${k}: expected 0 or 1`);
+    };
+    const o = { from, to, names, ports: flag('ports'), loopback: flag('loopback'), warmup: flag('warmup'), limit };
+    const q1 = newDestsQuery({ ...o, limit: limit + 1 });
+    const q2 = firstHourQuery(o);
+    const gone = clientGone(reply);
+    const t0 = performance.now();
+    const [rows, hours, first] = await Promise.all([
+      chQuery<NewDestRow>(ch, req.log, q1.sql, q1.params, gone),
+      chQuery<FirstHourRow>(ch, req.log, q2.sql, q2.params, gone),
+      chQuery<{ first: number }>(ch, req.log, FIRST_MINUTE_SQL, {}, gone),
+    ]);
+    const ms = Math.round(performance.now() - t0);
+    if (ms > NEW_DESTS_SLOW_MS) req.log.warn({ ms }, 'new-dests: the flows_1m scans took over 1 s; time for the dest_first_seen table (plans/17, phase 2)');
+    return buildNewDests(rows, hours, o, first[0] ? Number(first[0].first) * 1000 : null);
   });
 
   /**

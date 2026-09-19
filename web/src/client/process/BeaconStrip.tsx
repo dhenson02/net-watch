@@ -14,7 +14,11 @@ import { useQuery } from '../hooks/useQuery.ts';
 import { Link, navigate, setSearchParams, useSearch } from '../router.ts';
 import { processCallsRange } from '../history/callsSeries.ts';
 import {
+  BEACON_FOCUS_PARAM,
   BEACON_SCOPE_PARAM,
+  BEACONS_PANEL_ID,
+  focusRows,
+  scrollStart,
   bytesExtent,
   dotData,
   dotSize,
@@ -50,11 +54,12 @@ function openHistory(dest: string, range: TimeRange) {
 
 type Dot = [number, number, number, number | null];
 
-function StripChart({ d, range }: { d: BeaconsResponse; range: TimeRange }) {
+function StripChart({ d, range, focus }: { d: BeaconsResponse; range: TimeRange; focus: readonly number[] }) {
   const scheme = useColorScheme();
   const dests = d.dests;
   const labels = useMemo(() => rowLabels(dests), [dests]);
   const scroll = dests.length > VISIBLE_ROWS;
+  const focusKey = focus.join(',');
 
   const option = useMemo<EChartsCoreOption>(() => {
     const ink = cssVar('--text');
@@ -67,7 +72,11 @@ function StripChart({ d, range }: { d: BeaconsResponse; range: TimeRange }) {
     const data = dotData(dests);
     const [lo, hi] = bytesExtent(dests);
     const large = data.length > LARGE_THRESHOLD;
-    const last = Math.min(dests.length, VISIBLE_ROWS) - 1;
+    // A focused address (17) is scrolled into view, its rows' labels and dots in the accent color.
+    const focused = new Set(focus);
+    const first = focus.length && scroll ? scrollStart(focus[0]!, dests.length, VISIBLE_ROWS) : 0;
+    const last = first + Math.min(dests.length, VISIBLE_ROWS) - 1;
+    const focusedLabels = new Set(focus.map((i) => labels[i]));
     const byLabel = new Map(labels.map((l, i) => [l, dests[i]!]));
     const tip = (p: { data: Dot }) => {
       const [t, row, bytes, gap] = p.data;
@@ -99,7 +108,15 @@ function StripChart({ d, range }: { d: BeaconsResponse; range: TimeRange }) {
           triggerEvent: true,
           axisTick: { show: false },
           axisLine: { lineStyle: { color: axisLine } },
-          axisLabel: { interval: 0, width: GRID.left - 12, overflow: 'truncate', color: ink, fontSize: 11 },
+          axisLabel: {
+            interval: 0,
+            width: GRID.left - 12,
+            overflow: 'truncate',
+            color: ink,
+            fontSize: 11,
+            formatter: (v: string) => (focusedLabels.has(v) ? `{focus|${v}}` : v),
+            rich: { focus: { color: accent, fontWeight: 700, fontSize: 11 } },
+          },
           splitLine: { show: true, lineStyle: { color: grid } },
         },
         {
@@ -131,7 +148,7 @@ function StripChart({ d, range }: { d: BeaconsResponse; range: TimeRange }) {
         { type: 'inside', xAxisIndex: 0, filterMode: 'none', zoomOnMouseWheel: 'ctrl', moveOnMouseWheel: false, moveOnMouseMove: true },
         ...(scroll
           ? [
-              { type: 'inside', yAxisIndex: [0, 1], filterMode: 'none', zoomOnMouseWheel: false, moveOnMouseWheel: 'shift', moveOnMouseMove: false, startValue: 0, endValue: last },
+              { type: 'inside', yAxisIndex: [0, 1], filterMode: 'none', zoomOnMouseWheel: false, moveOnMouseWheel: 'shift', moveOnMouseMove: false, startValue: first, endValue: last },
               {
                 type: 'slider',
                 yAxisIndex: [0, 1],
@@ -143,7 +160,7 @@ function StripChart({ d, range }: { d: BeaconsResponse; range: TimeRange }) {
                 brushSelect: false,
                 showDetail: false,
                 zoomLock: true,
-                startValue: 0,
+                startValue: first,
                 endValue: last,
               },
             ]
@@ -159,13 +176,14 @@ function StripChart({ d, range }: { d: BeaconsResponse; range: TimeRange }) {
           symbolSize: (v: Dot) => dotSize(v[2], lo, hi),
           large,
           largeThreshold: LARGE_THRESHOLD,
-          itemStyle: { color, opacity: 0.75 },
+          itemStyle: focused.size && !large ? { color: (p: { data: Dot }) => (focused.has(p.data[1]) ? accent : color), opacity: 0.75 } : { color, opacity: 0.75 },
           emphasis: { scale: 1.6 },
           cursor: 'pointer',
         },
       ],
     };
-  }, [dests, labels, range, scheme, scroll]);
+    // focusKey stands for `focus`.
+  }, [dests, labels, range, scheme, scroll, focusKey]);
 
   const onEvents = useMemo(
     () => ({
@@ -210,6 +228,9 @@ export function ProcessBeacons({ p }: { p: ProcessInfo }) {
   const d = q.data ?? null;
   const shown: TimeRange = d ? { from: d.from, to: d.to } : range;
   const periodic = d ? d.dests.filter(isPeriodic).length : 0;
+  const focusIp = new URLSearchParams(useSearch()).get(BEACON_FOCUS_PARAM);
+  const focus = useMemo(() => (d ? focusRows(d.dests, focusIp) : []), [d, focusIp]);
+  const clearFocus = () => setSearchParams({ [BEACON_FOCUS_PARAM]: null }, { replace: true });
 
   const control = (
     <SegmentedControl<BeaconScope>
@@ -235,13 +256,26 @@ export function ProcessBeacons({ p }: { p: ProcessInfo }) {
           </>
         }
         actions={control}
-        footnote={footnote(d, scope, cut)}
+        footnote={
+          focusIp ? (
+            <>
+              {footnote(d, scope, cut)} ·{' '}
+              {d && focus.length === 0 ? `${focusIp} has no traffic in this window` : `${focusIp} highlighted`}{' '}
+              <button type="button" className="link-button" onClick={clearFocus}>
+                clear
+              </button>
+            </>
+          ) : (
+            footnote(d, scope, cut)
+          )
+        }
+        id={BEACONS_PANEL_ID}
         wide
         loading={q.loading}
         error={q.error}
         empty={d && !q.stale && d.dests.length === 0 ? `No traffic recorded ${scope === 'name' ? `for ${p.name}` : 'for this instance'} in this window.` : undefined}
       >
-        {d && d.dests.length > 0 && <StripChart d={d} range={shown} />}
+        {d && d.dests.length > 0 && <StripChart d={d} range={shown} focus={focus} />}
       </Panel>
       {d && d.dests.length > 0 && <PeriodicTable dests={d.dests} range={shown} />}
     </>

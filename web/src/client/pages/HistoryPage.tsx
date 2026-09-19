@@ -14,6 +14,9 @@ import { HistoryBytesPerCall } from '../history/BytesPerCall.tsx';
 import { HistoryCallsPanel } from '../history/CallsPanel.tsx';
 import { parseCallsParam } from '../history/callsSeries.ts';
 import { LifecycleTrack } from '../history/LifecycleTrack.tsx';
+import { NewDestDaily } from '../history/NewDestDaily.tsx';
+import { ND_TRACK_PARAM, parseNewDestOptions, parseNewDestTrack } from '../history/newDests.ts';
+import { NewDestTrack } from '../history/NewDestTrack.tsx';
 import { ProcessGantt } from '../history/ProcessGantt.tsx';
 import { ThroughputChart, type ThroughputAnswer } from '../history/ThroughputChart.tsx';
 import { TxRxScatter } from '../history/TxRxScatter.tsx';
@@ -33,6 +36,11 @@ const EVENTS_OPTIONS = [
   { value: 'all', label: 'starts+ends', title: 'Mark process starts (first network I/O) and ends' },
 ] as const;
 
+const NEWDEST_OPTIONS = [
+  { value: 'off', label: 'off' },
+  { value: 'on', label: 'on', title: 'A track under the chart: ◆ where a program first contacted an address it never used before' },
+] as const;
+
 const UNKNOWN_OPTIONS = [
   { value: 'off', label: 'off' },
   { value: 'on', label: 'on', title: 'A track under the chart: the share of bytes whose protocol the collector could not label' },
@@ -44,6 +52,9 @@ export function HistoryPage() {
   const search = useSearch();
   const events = parseEventsMode(new URLSearchParams(search).get('events'));
   const unknown = parseUnknownParam(search);
+  // 17: the new-destination track and the endpoint's options (shared with the per-day panel).
+  const newDests = parseNewDestTrack(search);
+  const ndOpts = parseNewDestOptions(search);
   // 14: the calls panel reads the throughput answer, which carries the calls while it is open.
   const callsOpen = parseCallsParam(search);
   const [answer, setAnswer] = useState<ThroughputAnswer | null>(null);
@@ -82,7 +93,7 @@ export function HistoryPage() {
               clear all
             </button>
           )}
-          <span className="muted">applies to the totals, the throughput chart, the calls panel, the bytes per call, the activity heatmap, the bandwidth treemap, the sent/received scatter, the flow diagram and (process and uid only) the process lifetimes</span>
+          <span className="muted">applies to the totals, the throughput chart, the calls panel, the bytes per call, the activity heatmap, the bandwidth treemap, the sent/received scatter, the flow diagram, (process and uid only) the process lifetimes and (process only) the new destinations</span>
         </p>
       )}
       <div className="panels">
@@ -116,6 +127,15 @@ export function HistoryPage() {
                 onChange={(v) => setSearchParams({ events: v === 'off' ? null : v })}
               />
               <span className="ctl-group">
+                <span className="ctl-label">new dests</span>
+                <SegmentedControl<'off' | 'on'>
+                  label="New destination markers"
+                  options={NEWDEST_OPTIONS}
+                  value={newDests ? 'on' : 'off'}
+                  onChange={(v) => setSearchParams({ [ND_TRACK_PARAM]: v === 'on' ? '1' : null })}
+                />
+              </span>
+              <span className="ctl-group">
                 <span className="ctl-label">unknown share</span>
                 <SegmentedControl<'off' | 'on'>
                   label="Share of bytes with an unknown protocol"
@@ -139,6 +159,7 @@ export function HistoryPage() {
                   main={throughputChart}
                 />
               )}
+              {newDests && <NewDestTrack range={range} name={filters.name} opts={ndOpts} slots={slots} main={throughputChart} />}
               {unknown && <UnknownShareTrack range={range} answer={answer} main={throughputChart} />}
             </>
           )}
@@ -149,6 +170,9 @@ export function HistoryPage() {
         <HistoryBytesPerCall range={range} filters={filters} />
 
         <ActivityHeatmap filters={filters} />
+
+        {/* 17: first contacts per day; only the process filter applies (first contact is per program and address). */}
+        <NewDestDaily range={range} name={filters.name} opts={ndOpts} slots={slots} />
 
         <BandwidthTreemap range={range} filters={filters} />
 

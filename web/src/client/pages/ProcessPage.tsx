@@ -7,6 +7,7 @@ import { ProcessCallsPanel } from '../history/CallsPanel.tsx';
 import { ProcessGantt } from '../history/ProcessGantt.tsx';
 import { useQuery, type QueryState } from '../hooks/useQuery.ts';
 import { ProcessBeacons } from '../process/BeaconStrip.tsx';
+import { NewDestList } from '../process/NewDestList.tsx';
 import { Link } from '../router.ts';
 
 /** The window of the instance panels: the last 7 days before the page was opened. */
@@ -64,6 +65,8 @@ function ProcessSections({ p, week }: { p: ProcessInfo; week: TimeRange }) {
       <ProcessBytesPerCall p={p} />
       {/* 15: a dot per active tick per destination, each row's periodicity, then the periodic-connections table. */}
       <ProcessBeacons p={p} />
+      {/* 17: addresses this program contacted for the first time in the last 7 days; a row focuses the strip above. */}
+      <NewDestList p={p} week={week} />
     </>
   );
 }

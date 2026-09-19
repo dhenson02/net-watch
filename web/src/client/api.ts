@@ -74,6 +74,17 @@ export const urls = {
   processBeacons: (pid: string, start: string, r: TimeRange) =>
     `/api/process/${encodeURIComponent(pid)}/${encodeURIComponent(start)}/beacons?${qs({ from: r.from, to: r.to })}`,
   historyBeacons: (name: string, r: TimeRange) => `/api/history/beacons?${qs({ name, from: r.from, to: r.to })}`,
+  // 17: first contacts of a program with an address; `names` narrows it, the flags drop the default exclusions.
+  historyNewDests: (r: TimeRange, p: { names?: readonly string[]; ports?: boolean; loopback?: boolean; warmup?: boolean; limit?: number } = {}) =>
+    `/api/history/new-dests?${qs({
+      from: r.from,
+      to: r.to,
+      names: p.names?.length ? p.names.join(',') : undefined,
+      ports: p.ports ? 1 : undefined,
+      loopback: p.loopback ? 1 : undefined,
+      warmup: p.warmup ? 1 : undefined,
+      limit: p.limit,
+    })}`,
   historyScatter:(r: TimeRange, p: { group: string; basis: string; filters: UrlFilters }) =>
     `/api/history/scatter?${qs({ from: r.from, to: r.to, group: p.group, basis: p.basis, ...p.filters })}`,
 };
