@@ -419,3 +419,49 @@ export interface HeatmapResponse {
   /** Largest `bytes` first; empty without traffic. */
   grids: HeatmapGrid[];
 }
+
+// ---------------------------------------------------------------------------
+// uid → process → app treemap (07)
+
+/** Bytes a treemap sums: tx + rx, sent or received. */
+export type TreemapDir = 'total' | 'tx' | 'rx';
+
+export interface TreemapApp {
+  /** App label as the collector classified it (`HTTPS`, `DNS/UDP`, `unknown`). */
+  name: string;
+  value: number;
+}
+
+export interface TreemapProc {
+  /** Process name, or `other (N processes)` for the folded rest. */
+  name: string;
+  value: number;
+  /** Set on the "other" node: how many processes it sums. */
+  folded?: number;
+  children: TreemapApp[];
+}
+
+export interface TreemapUser {
+  /** Username from /etc/passwd, `uid N` when it has none, `unknown uid` when the process is unknown. */
+  name: string;
+  /** 4294967295 when the rollup row's process is missing from `processes`. */
+  uid: number;
+  value: number;
+  children: TreemapProc[];
+}
+
+export interface TreemapResponse {
+  from: number;
+  to: number;
+  /** Raw `flows` up to 2 h, else `flows_1m`. */
+  table: 'flows' | 'flows_1m';
+  dir: TreemapDir;
+  /** Sum of every user's value. */
+  total: number;
+  /** Processes kept per user before the rest are folded. */
+  top: number;
+  /** Largest first at every level. */
+  users: TreemapUser[];
+  /** More (uid, name, app) rows matched than the server reads; the smallest were left out. */
+  truncated: boolean;
+}

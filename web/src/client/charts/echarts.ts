@@ -2,7 +2,7 @@
 // never from 'echarts' itself, so the bundle only carries what is listed.
 // A chart that needs another series type or component adds it below.
 import * as echarts from 'echarts/core';
-import { BarChart, HeatmapChart, LineChart, SankeyChart, ScatterChart } from 'echarts/charts';
+import { BarChart, HeatmapChart, LineChart, SankeyChart, ScatterChart, SunburstChart, TreemapChart } from 'echarts/charts';
 import {
   AriaComponent,
   BrushComponent,
@@ -27,6 +27,9 @@ echarts.use([
   // History's hour × weekday heatmap (06), colored by a continuous visualMap.
   HeatmapChart,
   VisualMapContinuousComponent,
+  // History's uid → process → app treemap (07) and its sunburst view.
+  TreemapChart,
+  SunburstChart,
   AriaComponent,
   BrushComponent,
   DataZoomComponent,

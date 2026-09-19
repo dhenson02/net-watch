@@ -41,6 +41,9 @@ export const urls = {
   // 06: the heatmap's own window (not the page range); `tz` is the browser's.
   historyHeatmap: (r: TimeRange, p: { tz: string; metric: string; split: string; filters: UrlFilters }) =>
     `/api/history/heatmap?${qs({ from: r.from, to: r.to, tz: p.tz, metric: p.metric === 'total' ? undefined : p.metric, split: p.split === 'none' ? undefined : p.split, ...p.filters })}`,
+  // 07: `dir` total (default) | tx | rx.
+  historyTreemap: (r: TimeRange, p: { dir: string; filters: UrlFilters }) =>
+    `/api/history/treemap?${qs({ from: r.from, to: r.to, dir: p.dir === 'total' ? undefined : p.dir, ...p.filters })}`,
   historyScatter: (r: TimeRange, p: { group: string; basis: string; filters: UrlFilters }) =>
     `/api/history/scatter?${qs({ from: r.from, to: r.to, group: p.group, basis: p.basis, ...p.filters })}`,
 };

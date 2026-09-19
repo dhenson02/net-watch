@@ -9,6 +9,7 @@ import {
   type LifecycleResponse,
   type ScatterResponse,
   type ThroughputResponse,
+  type TreemapResponse,
 } from '../../shared/api.ts';
 import { buildHeatmap, heatmapQuery, parseHeatRange, parseMetric, parseSplit, sampleCounts, type HeatmapRow } from '../ch/heatmap.ts';
 import { LIFECYCLE_LIMIT_DEFAULT, LIFECYCLE_LIMIT_MAX, lifecycleQuery, parseNames, toLifecycleProc, type LifecycleRow } from '../ch/lifecycle.ts';
@@ -40,6 +41,7 @@ import {
   type ThroughputRow,
   type UnknownRow,
 } from '../ch/throughput.ts';
+import { buildTreemap, parseTreemapDir, TREEMAP_MAX_ROWS, TREEMAP_TOP, treemapQuery, type TreemapRow } from '../ch/treemap.ts';
 import { parseTz } from '../ch/tz.ts';
 import type { ClickHouseClient } from '../db/clickhouse.ts';
 import { badRequest } from '../http-error.ts';
@@ -232,6 +234,32 @@ export function historyRoutes(app: FastifyInstance, deps: { clickhouse: ClickHou
     const start = coveredFrom ?? from;
     const samples = start < to ? sampleCounts(start, to, tz) : new Array<number>(HEATMAP_CELLS).fill(0);
     return buildHeatmap(rows, { from, to, tz, metric, split, coveredFrom }, samples);
+  });
+
+  /**
+   * uid → process → app treemap (07): bytes per user, process name and app
+   * over the range (`dir=total|tx|rx`), nested, largest first; each user keeps
+   * its 30 largest processes and folds the rest into `other (N processes)`.
+   * Raw flows up to 2 h, else the rollup with uid joined from `processes`.
+   * The page's filters apply.
+   */
+  app.get<RangeQuery>('/api/history/treemap', async (req, reply): Promise<TreemapResponse> => {
+    const r = parseRange(req.query);
+    const dir = parseTreemapDir(req.query.dir);
+    const { sql, params } = treemapQuery(r, dir, parseFilters(req.query), TREEMAP_MAX_ROWS + 1);
+    const rows = await chQuery<TreemapRow>(ch, req.log, sql, params, clientGone(reply));
+    const truncated = rows.length > TREEMAP_MAX_ROWS;
+    const tree = buildTreemap(truncated ? rows.slice(0, TREEMAP_MAX_ROWS) : rows, (uid) => users.name(uid));
+    return {
+      from: r.from,
+      to: r.to,
+      table: r.table,
+      dir,
+      total: tree.reduce((s, u) => s + u.value, 0),
+      top: TREEMAP_TOP,
+      users: tree,
+      truncated,
+    };
   });
 
   /**

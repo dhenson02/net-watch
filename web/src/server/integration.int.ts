@@ -20,6 +20,7 @@ import type {
   ScatterResponse,
   ThroughputCompare,
   ThroughputResponse,
+  TreemapResponse,
 } from '../shared/api.ts';
 import { THROUGHPUT_OTHER } from '../shared/api.ts';
 import { parseRange } from './ch/range.ts';
@@ -492,6 +493,61 @@ test('history heatmap: 168 cells per grid, bytes match the summary, metrics, spl
   assert.deepEqual(none.body.grids, []);
   for (const q of ['metric=bytes', 'split=name', 'tz=Mars/Base', 'from=5&to=4', `from=0&to=${400 * 86_400_000}`, 'uid=x']) {
     assert.equal((await get(`/api/history/heatmap?${q}`)).status, 400, q);
+  }
+});
+
+test('history treemap: users → processes → apps, sums match the summary, dir, both tables, filters', async () => {
+  const to = Math.floor(Date.now() / 60_000) * 60_000;
+  const check = (b: TreemapResponse) => {
+    assert.equal(b.top, 30);
+    assert.equal(b.total, b.users.reduce((s, u) => s + u.value, 0));
+    for (let i = 1; i < b.users.length; i++) assert.ok(b.users[i - 1]!.value >= b.users[i]!.value, 'users largest first');
+    for (const u of b.users) {
+      assert.equal(typeof u.uid, 'number');
+      assert.ok(u.name.length > 0);
+      assert.ok(u.children.length <= 31, `${u.name}: at most 30 processes + other`);
+      assert.equal(u.value, u.children.reduce((s, p) => s + p.value, 0));
+      u.children.forEach((p, i) => {
+        if (p.folded !== undefined) {
+          assert.equal(i, u.children.length - 1, 'other last');
+          assert.ok(p.folded >= 2);
+          assert.match(p.name, /^other \(\d+ processes\)$/);
+        }
+        assert.ok(p.value > 0);
+        assert.equal(p.value, p.children.reduce((s, a) => s + a.value, 0));
+      });
+    }
+  };
+  for (const span of [3600_000, 24 * 3600_000]) {
+    const range = `from=${to - span}&to=${to}`;
+    const all = await get<TreemapResponse>(`/api/history/treemap?${range}`);
+    assert.equal(all.status, 200);
+    check(all.body);
+    assert.equal(all.body.table, span <= 2 * 3600_000 ? 'flows' : 'flows_1m');
+    assert.equal(all.body.dir, 'total');
+    assert.equal(all.body.truncated, false);
+    const sum = await get<HistorySummary>(`/api/history/summary?${range}`);
+    assert.equal(all.body.total, sum.body.txBytes + sum.body.rxBytes);
+    const tx = await get<TreemapResponse>(`/api/history/treemap?${range}&dir=tx`);
+    const rx = await get<TreemapResponse>(`/api/history/treemap?${range}&dir=rx`);
+    check(tx.body);
+    assert.equal(tx.body.total, sum.body.txBytes);
+    assert.equal(rx.body.total, sum.body.rxBytes);
+    const u = all.body.users[0];
+    if (u) {
+      const one = await get<TreemapResponse>(`/api/history/treemap?${range}&uid=${u.uid}`);
+      assert.deepEqual(one.body.users.map((x) => x.uid), [u.uid]);
+      assert.equal(one.body.total, u.value);
+      const p = u.children.find((c) => c.folded === undefined)!;
+      const byName = await get<TreemapResponse>(`/api/history/treemap?${range}&name=${encodeURIComponent(p.name)}`);
+      assert.ok(byName.body.users.every((x) => x.children.every((c) => c.name === p.name)));
+    }
+  }
+  const none = await get<TreemapResponse>(`/api/history/treemap?from=${to - 3600_000}&to=${to}&name=no-such-proc`);
+  assert.deepEqual(none.body.users, []);
+  assert.equal(none.body.total, 0);
+  for (const q of ['dir=both', 'from=5&to=4', 'uid=x', 'dest=nope']) {
+    assert.equal((await get(`/api/history/treemap?${q}`)).status, 400, q);
   }
 });
 
