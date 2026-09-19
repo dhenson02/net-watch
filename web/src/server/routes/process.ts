@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
-import type { BytesPerCallResponse, ProcessCallsResponse, ProcessInfo } from '../../shared/api.ts';
+import { BEACON_DEST_LIMIT, BEACON_MAX_SPAN_MS, type BeaconsResponse, type BytesPerCallResponse, type ProcessCallsResponse, type ProcessInfo } from '../../shared/api.ts';
+import { beaconsQuery, buildBeacons, capSpan, lifetimeRange, type BeaconRow } from '../ch/beacons.ts';
 import { buildBytesPerCall, bytesPerCallQuery, parseBpcBy, parseBpcDir, type BytesPerCallQueryRow } from '../ch/bytesPerCall.ts';
 import { buildProcessCalls, processCallsQuery, rawRange, type ProcessCallsRow } from '../ch/calls.ts';
 import { chQuery, clientGone } from '../ch/query.ts';
@@ -89,5 +90,39 @@ export function processRoutes(app: FastifyInstance, deps: { clickhouse: ClickHou
     const { sql, params } = bytesPerCallQuery({ r, dir, by, filters: {}, instance });
     const rows = await chQuery<BytesPerCallQueryRow>(ch, req.log, sql, params, clientGone(reply));
     return buildBytesPerCall(rows, { from: r.from, to: r.to, table: r.table, dir, by });
+  });
+
+  /**
+   * Beaconing strip (15): every active tick of this instance per destination
+   * (ip, port, proto, app), the 100 with the most ticks, each with its
+   * periodicity (period, cv, bursts, score). `from`/`to` (ms) default to the
+   * instance's networked lifetime; either way the range is cut to its last
+   * 24 h (`capped`). Reads by the primary key. No 404 for an unknown id.
+   */
+  app.get<ProcessRangeParams>('/api/process/:pid/:start/beacons', async (req, reply): Promise<BeaconsResponse> => {
+    const id = parseId(req.params);
+    const now = Date.now();
+    let base: { from: number; to: number } = parseRange(req.query, now);
+    if (!req.query.from && !req.query.to) {
+      type Row = { first_seen_ms: string; last_seen_ms: string; ended_ms: string | null };
+      const [p] = await chQuery<Row>(
+        ch,
+        req.log,
+        `SELECT toUnixTimestamp64Milli(first_seen) AS first_seen_ms, toUnixTimestamp64Milli(last_seen) AS last_seen_ms,
+                toUnixTimestamp64Milli(ended) AS ended_ms
+         FROM processes FINAL
+         WHERE pid = {pid:UInt32} AND proc_start = {start:UInt64}`,
+        id,
+        clientGone(reply),
+      );
+      if (p) {
+        const ended = p.ended_ms === null ? null : Number(p.ended_ms);
+        base = lifetimeRange({ first_seen_ms: Number(p.first_seen_ms), last_seen_ms: Number(p.last_seen_ms), ended_ms: ended }, now);
+      }
+    }
+    const r = capSpan(base, BEACON_MAX_SPAN_MS.instance);
+    const { sql, params } = beaconsQuery({ scope: 'instance', ...id, from: r.from, to: r.to, limit: BEACON_DEST_LIMIT + 1 });
+    const rows = await chQuery<BeaconRow>(ch, req.log, sql, params, clientGone(reply));
+    return buildBeacons(rows, { ...r, scope: 'instance' }, BEACON_DEST_LIMIT);
   });
 }

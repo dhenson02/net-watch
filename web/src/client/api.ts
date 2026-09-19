@@ -69,6 +69,11 @@ export const urls = {
   // 10: one instance, from raw flows.
   processBytesPerCall: (pid: string, start: string, r: TimeRange, dir: string) =>
     `/api/process/${encodeURIComponent(pid)}/${encodeURIComponent(start)}/bytes-per-call?${qs({ from: r.from, to: r.to, dir: dir === 'tx' ? undefined : dir })}`,
+  // 15: active ticks per destination and their periodicity, from raw flows: one instance (≤ 24 h) or every
+  // instance of a name (≤ 6 h; the server keeps the last part of a longer range).
+  processBeacons: (pid: string, start: string, r: TimeRange) =>
+    `/api/process/${encodeURIComponent(pid)}/${encodeURIComponent(start)}/beacons?${qs({ from: r.from, to: r.to })}`,
+  historyBeacons: (name: string, r: TimeRange) => `/api/history/beacons?${qs({ name, from: r.from, to: r.to })}`,
   historyScatter:(r: TimeRange, p: { group: string; basis: string; filters: UrlFilters }) =>
     `/api/history/scatter?${qs({ from: r.from, to: r.to, group: p.group, basis: p.basis, ...p.filters })}`,
 };

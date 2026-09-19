@@ -618,3 +618,68 @@ export interface BytesPerCallResponse {
   /** How many keys the null row sums; 0 without one. */
   folded: number;
 }
+
+// ---------------------------------------------------------------------------
+// Beaconing strip + periodicity score (15)
+
+/** One instance (`/api/process/:pid/:start/beacons`) or every instance of a name (`/api/history/beacons`). */
+export type BeaconScope = 'instance' | 'name';
+
+/** At most this many destinations, the most active ticks first. */
+export const BEACON_DEST_LIMIT = 100;
+/** A periodicity score above this marks a destination as periodic. */
+export const BEACON_PERIODIC_SCORE = 0.8;
+/** The longest range per scope: one instance reads by its primary key, a name scans by time. */
+export const BEACON_MAX_SPAN_MS: Record<BeaconScope, number> = { instance: 24 * 3_600_000, name: 6 * 3_600_000 };
+
+/**
+ * One destination's active ticks and their periodicity. A burst is a run of
+ * consecutive active ticks (gaps up to 1.5 collector intervals); the stats
+ * are over the gaps between burst starts.
+ */
+export interface BeaconDest {
+  /** `ip:port`, IPv6 as `[addr]:port`: the History `filter.dest` value. */
+  dest: string;
+  ip: string;
+  rport: number;
+  /** TCP/UDP; in name scope the one with the most bytes. */
+  proto: string;
+  /** The app label; in name scope the one with the most bytes. */
+  app: string;
+  /** Active ticks (instances merged per tick in name scope). */
+  ticks: number;
+  /** Payload bytes both ways over the range. */
+  bytes: number;
+  /** The collector interval of these rows (median), ms. */
+  interval_ms: number;
+  /** Median gap between burst starts, s; null with fewer than 2 bursts. */
+  period_s: number | null;
+  /** Coefficient of variation of the gaps between burst starts; null with fewer than 3 bursts. */
+  cv: number | null;
+  bursts: number;
+  /** 1 - cv with at least 6 bursts and cv < 0.15, else 0. */
+  score: number;
+  /**
+   * Dots, oldest first: tick time (ms), bytes (tx + rx) and the gap (ms)
+   * since the previous burst's start: 0 for a tick that continues a burst,
+   * null for the first burst.
+   */
+  t: number[];
+  b: number[];
+  gap: (number | null)[];
+  /** When the ticks were too many to send, dots are merged into bins this wide (ms); null otherwise. */
+  binned_ms: number | null;
+}
+
+/** `/api/process/:pid/:start/beacons` and `/api/history/beacons` (15). */
+export interface BeaconsResponse {
+  from: number;
+  to: number;
+  scope: BeaconScope;
+  /** Highest score first, then most active ticks. */
+  dests: BeaconDest[];
+  /** More destinations had traffic than BEACON_DEST_LIMIT; the least active were left out. */
+  truncated: boolean;
+  /** The range was longer than BEACON_MAX_SPAN_MS allows and was cut to its last part. */
+  capped: boolean;
+}

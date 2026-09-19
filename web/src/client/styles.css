@@ -1120,3 +1120,37 @@ input:focus-visible {
 .panel {
   scroll-margin-top: 64px;
 }
+
+/* Beaconing strip + periodic connections (15) */
+.badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 3px;
+  background: var(--accent);
+  color: var(--surface);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 16px;
+  vertical-align: 1px;
+}
+
+.link-button {
+  margin-top: 8px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.link-button:hover {
+  text-decoration: underline;
+}
+
+.link-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}

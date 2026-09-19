@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { after, before, test } from 'node:test';
 import type {
+  BeaconsResponse,
   BurstResponse,
   BytesPerCallResponse,
   CompactTick,
@@ -962,4 +963,78 @@ test('ClickHouse: DISPLAY_IP and toIPv6 round-trip', async () => {
   } finally {
     await ch.close();
   }
+});
+
+test('beacons: ticks per destination match the table, periodic first, ranges capped', async () => {
+  const now = Date.now();
+  const ch = createClickHouse(config.clickhouse);
+  const sorted = (b: BeaconsResponse) =>
+    b.dests.forEach((d, i) => {
+      assert.ok(d.t.every((t, j) => j === 0 || t > d.t[j - 1]!), `${d.dest} times ascending`);
+      assert.equal(d.t.length, d.b.length);
+      assert.equal(d.t.length, d.gap.length);
+      assert.ok(d.t.every((t) => t >= b.from && t < b.to));
+      assert.equal(d.score > 0, d.bursts >= 6 && d.cv !== null && d.cv < 0.15, d.dest);
+      const prev = b.dests[i - 1];
+      if (prev) assert.ok(prev.score > d.score || (prev.score === d.score && prev.ticks >= d.ticks), 'score, then ticks');
+    });
+  try {
+    // The instance with the most active ticks in the last 6 h.
+    const rs = await ch.query({
+      query: `SELECT pid, toString(proc_start) AS start, any(name) AS name FROM flows WHERE ts > now() - INTERVAL 6 HOUR
+              GROUP BY pid, proc_start ORDER BY uniqExact(ts) DESC LIMIT 1`,
+      format: 'JSONEachRow',
+    });
+    const [row] = await rs.json<{ pid: number; start: string; name: string }>();
+    if (row) {
+      const from = now - 6 * 3_600_000;
+      const res = await get<BeaconsResponse>(`/api/process/${row.pid}/${row.start}/beacons?from=${from}&to=${now}`);
+      assert.equal(res.status, 200);
+      const b = res.body;
+      assert.deepEqual([b.from, b.to, b.scope, b.capped], [from, now, 'instance', false]);
+      assert.ok(b.dests.length > 0 && b.dests.length <= 100);
+      sorted(b);
+      // The busiest destination's ticks are its distinct tick times in the table.
+      const top = [...b.dests].sort((x, y) => y.ticks - x.ticks)[0]!;
+      const q = await ch.query({
+        query: `SELECT uniqExact(ts) AS n, sum(tx_bytes + rx_bytes) AS bytes FROM flows
+                WHERE pid = {pid:UInt32} AND proc_start = {start:UInt64} AND raddr = toIPv6({ip:String}) AND rport = {port:UInt16}
+                  AND proto = {proto:String} AND app = {app:String}
+                  AND ts >= fromUnixTimestamp64Milli({from:Int64}) AND ts < fromUnixTimestamp64Milli({to:Int64})`,
+        query_params: { pid: row.pid, start: row.start, ip: top.ip, port: top.rport, proto: top.proto, app: top.app, from, to: now },
+        format: 'JSONEachRow',
+      });
+      const [want] = await q.json<{ n: string; bytes: string }>();
+      assert.equal(top.ticks, Number(want!.n));
+      assert.equal(top.bytes, Number(want!.bytes));
+
+      // Default range: the instance's networked lifetime, cut to 24 h.
+      const def = (await get<BeaconsResponse>(`/api/process/${row.pid}/${row.start}/beacons`)).body;
+      assert.ok(def.to - def.from <= 24 * 3_600_000 && def.to <= Date.now());
+      assert.equal(def.capped, def.to - def.from === 24 * 3_600_000);
+      // An explicit range over 24 h keeps its last 24 h.
+      const long = (await get<BeaconsResponse>(`/api/process/${row.pid}/${row.start}/beacons?from=${now - 48 * 3_600_000}&to=${now}`)).body;
+      assert.deepEqual([long.from, long.to, long.capped], [now - 24 * 3_600_000, now, true]);
+
+      // Name scope: every instance of the name, one row per (ip, port), capped at 6 h.
+      const byName = await get<BeaconsResponse>(`/api/history/beacons?name=${encodeURIComponent(row.name)}&from=${now - 12 * 3_600_000}&to=${now}`);
+      assert.equal(byName.status, 200);
+      assert.deepEqual([byName.body.scope, byName.body.from, byName.body.capped], ['name', now - 6 * 3_600_000, true]);
+      sorted(byName.body);
+      assert.equal(new Set(byName.body.dests.map((d) => d.dest)).size, byName.body.dests.length, 'one row per destination');
+      // Merging instances never loses a tick: each destination has at least this instance's ticks.
+      for (const d of b.dests) {
+        const merged = byName.body.dests.find((x) => x.dest === d.dest);
+        if (merged) assert.ok(merged.ticks >= d.ticks, d.dest);
+      }
+    }
+  } finally {
+    await ch.close();
+  }
+  const none = await get<BeaconsResponse>('/api/process/1/18446744073709551615/beacons');
+  assert.equal(none.status, 200);
+  assert.deepEqual(none.body.dests, []);
+  assert.equal((await get('/api/history/beacons')).status, 400);
+  assert.equal((await get('/api/history/beacons?name=x&from=5&to=1')).status, 400);
+  assert.equal((await get('/api/process/x/1/beacons')).status, 400);
 });

@@ -6,6 +6,7 @@ import { ProcessBytesPerCall } from '../history/BytesPerCall.tsx';
 import { ProcessCallsPanel } from '../history/CallsPanel.tsx';
 import { ProcessGantt } from '../history/ProcessGantt.tsx';
 import { useQuery, type QueryState } from '../hooks/useQuery.ts';
+import { ProcessBeacons } from '../process/BeaconStrip.tsx';
 import { Link } from '../router.ts';
 
 /** The window of the instance panels: the last 7 days before the page was opened. */
@@ -61,6 +62,8 @@ function ProcessSections({ p, week }: { p: ProcessInfo; week: TimeRange }) {
       <ProcessCallsPanel p={p} />
       {/* 10: this instance's calls by bytes per call, from raw flows, the median marked. */}
       <ProcessBytesPerCall p={p} />
+      {/* 15: a dot per active tick per destination, each row's periodicity, then the periodic-connections table. */}
+      <ProcessBeacons p={p} />
     </>
   );
 }

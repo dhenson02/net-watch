@@ -1,5 +1,8 @@
 import type { FastifyInstance } from 'fastify';
 import {
+  BEACON_DEST_LIMIT,
+  BEACON_MAX_SPAN_MS,
+  type BeaconsResponse,
   type BurstResponse,
   type BytesPerCallResponse,
   COMPARE_OFFSET_MS,
@@ -14,6 +17,7 @@ import {
   type ThroughputResponse,
   type TreemapResponse,
 } from '../../shared/api.ts';
+import { beaconsQuery, buildBeacons, capSpan, type BeaconRow } from '../ch/beacons.ts';
 import { rawRange } from '../ch/calls.ts';
 import { buildBurst, burstQuery, burstSpanOk, parseBurstDir, type BurstRow } from '../ch/burst.ts';
 import { buildBytesPerCall, bytesPerCallQuery, parseBpcBy, parseBpcDir, parseInstance, type BytesPerCallQueryRow } from '../ch/bytesPerCall.ts';
@@ -335,6 +339,22 @@ export function historyRoutes(app: FastifyInstance, deps: { clickhouse: ClickHou
     const { sql, params } = bytesPerCallQuery({ r, dir, by, filters: parseFilters(req.query), instance });
     const rows = await chQuery<BytesPerCallQueryRow>(ch, req.log, sql, params, clientGone(reply));
     return buildBytesPerCall(rows, { from: r.from, to: r.to, table: r.table, dir, by });
+  });
+
+  /**
+   * Beaconing strip (15), name scope: every instance of process `name`
+   * (required, exact), active ticks per destination (ip, port) merged per
+   * tick, the 100 with the most ticks, each with its periodicity. It scans by
+   * time rather than by the pid key, so the range (default: the last hour) is
+   * cut to its last 6 h (`capped`).
+   */
+  app.get<RangeQuery>('/api/history/beacons', async (req, reply): Promise<BeaconsResponse> => {
+    const { name } = parseFilters({ name: req.query.name });
+    if (name === undefined) throw badRequest('name: required');
+    const r = capSpan(parseRange(req.query), BEACON_MAX_SPAN_MS.name);
+    const { sql, params } = beaconsQuery({ scope: 'name', name, from: r.from, to: r.to, limit: BEACON_DEST_LIMIT + 1 });
+    const rows = await chQuery<BeaconRow>(ch, req.log, sql, params, clientGone(reply));
+    return buildBeacons(rows, { ...r, scope: 'name' }, BEACON_DEST_LIMIT);
   });
 
   /**
