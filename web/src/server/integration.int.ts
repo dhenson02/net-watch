@@ -289,6 +289,36 @@ test('history throughput compare: the earlier window shifted onto the range, nul
   for (const q of ['compare=2d', 'compare=1W', 'compare=true']) assert.equal((await get(`/api/history/throughput?${q}`)).status, 400, q);
 });
 
+test('history throughput unknown: the unlabelled share per bucket, on the main grid, filters', async () => {
+  const now = Date.now();
+  const DAY = 86_400_000;
+  for (const span of [DAY, 3_600_000]) {
+    const from = now - span;
+    const res = await get<ThroughputResponse>(`/api/history/throughput?from=${from}&to=${now}&unknown=1`);
+    assert.equal(res.status, 200);
+    const u = res.body.unknown!;
+    assert.ok(u, 'unknown present');
+    for (const a of [u.share, u.bytes, u.total]) assert.equal(a.length, res.body.t.length);
+    u.share.forEach((s, i) => {
+      if (u.total[i] === 0) assert.equal(s, null, `null without traffic (${i})`);
+      else assert.ok(Math.abs(s! - u.bytes[i]! / u.total[i]!) < 1e-4 && u.bytes[i]! <= u.total[i]!, `share (${i})`);
+    });
+    // All bytes over the grid match the totals over the same span.
+    const sum = await get<HistorySummary>(`/api/history/summary?from=${res.body.from}&to=${now}`);
+    const total = u.total.reduce((a, b) => a + b, 0);
+    const want = sum.body.txBytes + sum.body.rxBytes;
+    assert.ok(Math.abs(total - want) <= Math.max(1, want * 0.005), `${span}: ${total} vs ${want}`);
+
+    // Filtered to app=unknown, every bucket with traffic is 100 % unknown.
+    const only = (await get<ThroughputResponse>(`/api/history/throughput?from=${from}&to=${now}&unknown=1&app=unknown`)).body.unknown!;
+    only.share.forEach((s, i) => assert.ok(s === null || s === 1, `app=unknown (${i}): ${s}`));
+    assert.deepEqual(only.bytes, u.bytes);
+  }
+  const plain = await get<ThroughputResponse>(`/api/history/throughput?from=${now - DAY}&to=${now}`);
+  assert.equal(plain.body.unknown, undefined);
+  for (const q of ['unknown=yes', 'unknown=2', 'unknown=true']) assert.equal((await get(`/api/history/throughput?${q}`)).status, 400, q);
+});
+
 test('history lifecycle: processes whose first I/O or end is in range, largest first, filters', async () => {
   const now = Date.now();
   const range = `from=${now - 7 * 86_400_000}&to=${now}`;

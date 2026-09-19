@@ -24,8 +24,9 @@ export function useThroughput(
   pageSlots: SlotAssigner,
   ownSlots: SlotAssigner,
   compare: CompareOffset | null = null,
+  unknown = false,
 ): QueryState<ThroughputResponse> & { slotOf: Map<string, number> } {
-  const q = useQuery<ThroughputResponse>(urls.historyThroughput(range, p, compare));
+  const q = useQuery<ThroughputResponse>(urls.historyThroughput(range, p, compare, unknown));
   const owned = useRef<{ by: ThroughputBy; keys: Set<string> }>({ by: p.by, keys: new Set() });
   const last = useRef(new Map<string, number>());
   const slotOf = useMemo(() => {

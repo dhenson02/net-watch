@@ -9,6 +9,7 @@ import {
   type ThroughputCompare,
   type ThroughputDir,
   type ThroughputResponse,
+  type ThroughputUnknown,
 } from '../../shared/api.ts';
 import { badRequest } from '../http-error.ts';
 import { bucketSeconds, rangeParams, timeFilter, type Range } from './range.ts';
@@ -194,4 +195,49 @@ export function buildCompare(rows: readonly CompareRow[], r: Range, offsetMs: nu
   const seconds = t.map((start) => (Math.min(start + stepMs, Math.max(dataEnd, start)) - Math.max(start, since)) / 1000);
   const rate = (bytes: number[]) => bytes.map((b, i) => (t[i]! + stepMs <= since ? null : kbps(b, Math.max(0, seconds[i]!))));
   return { offset: offsetMs, step, since, t, tx: rate(tx), rx: rate(rx) };
+}
+
+// ---------------------------------------------------------------------------
+// Unknown-protocol share (16): bytes the classifier could not label
+
+export function parseUnknown(raw: unknown): boolean {
+  if (raw === undefined || raw === '' || raw === '0') return false;
+  if (raw === '1') return true;
+  throw badRequest('unknown: expected 1 or 0');
+}
+
+/**
+ * Per bucket of the range (the main query's buckets and table), the bytes
+ * with `app = 'unknown'` and all bytes, with the filters applied.
+ */
+export function unknownQuery(r: Range, filters: Filters): { sql: string; params: Record<string, unknown> } {
+  const time = timeFilter(r);
+  const src = flowSource(r.table, time, filters.uid !== undefined);
+  const f = filterSql(filters);
+  const sql = `SELECT ${bucketSeconds(r)} AS t,
+           sumIf(tx_bytes + rx_bytes, app = 'unknown') AS unk,
+           sum(tx_bytes + rx_bytes) AS total
+    FROM ${src}
+    WHERE ${time}${f.sql}
+    GROUP BY t
+    ORDER BY t`;
+  return { sql, params: { ...rangeParams(r), ...f.params } };
+}
+
+export type UnknownRow = { t: number; unk: string | number; total: string | number };
+
+/** Rows → one value per bucket of `r`, aligned with buildThroughput's `t`; the share is null where the total is 0. */
+export function buildUnknown(rows: readonly UnknownRow[], r: Range): ThroughputUnknown {
+  const stepMs = r.step * 1000;
+  const n = Math.max(1, Math.ceil((r.to - r.from) / stepMs));
+  const bytes = new Array<number>(n).fill(0);
+  const total = new Array<number>(n).fill(0);
+  for (const row of rows) {
+    const i = Math.round((row.t * 1000 - r.from) / stepMs);
+    if (i < 0 || i >= n) continue;
+    bytes[i]! += Number(row.unk);
+    total[i]! += Number(row.total);
+  }
+  const share = total.map((tot, i) => (tot > 0 ? Math.round((bytes[i]! / tot) * 1e4) / 1e4 : null));
+  return { share, bytes, total };
 }

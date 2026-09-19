@@ -28,10 +28,14 @@ import {
   compareQuery,
   FIRST_MINUTE_SQL,
   parseCompare,
+  buildUnknown,
   parseDir,
+  parseUnknown,
   throughputQuery,
+  unknownQuery,
   type CompareRow,
   type ThroughputRow,
+  type UnknownRow,
 } from '../ch/throughput.ts';
 import type { ClickHouseClient } from '../db/clickhouse.ts';
 import { badRequest } from '../http-error.ts';
@@ -120,7 +124,8 @@ export function historyRoutes(app: FastifyInstance, deps: { clickhouse: ClickHou
    * Throughput over a range stacked by one dimension (05): kbps per bucket for
    * the top N keys plus the rest, zero-padded. `from` is rounded down to a
    * bucket start. Filters: name, app, proto, uid, dest (exact). `compare=1d|1w`
-   * adds the same window that long before, totals only (11).
+   * adds the same window that long before, totals only (11). `unknown=1`
+   * adds the share of bytes the classifier labelled unknown, per bucket (16).
    */
   app.get<RangeQuery>('/api/history/throughput', async (req, reply): Promise<ThroughputResponse> => {
     const r = alignRange(parseRange(req.query));
@@ -135,10 +140,13 @@ export function historyRoutes(app: FastifyInstance, deps: { clickhouse: ClickHou
     const ghost = offset ? compareQuery(r, offset, filters) : null;
     // The ghost (11) runs alongside: totals of the earlier window, and the
     // table's first minute, to tell "no data back then" from "no traffic".
-    const [rows, ghostRows, first] = await Promise.all([
+    // 16: unknown vs all bytes over the same buckets.
+    const unk = parseUnknown(req.query.unknown) ? unknownQuery(r, filters) : null;
+    const [rows, ghostRows, first, unkRows] = await Promise.all([
       chQuery<ThroughputRow>(ch, req.log, sql, params, gone),
       ghost && chQuery<CompareRow>(ch, req.log, ghost.sql, ghost.params, gone),
       ghost && chQuery<{ first: number }>(ch, req.log, FIRST_MINUTE_SQL, {}, gone),
+      unk && chQuery<UnknownRow>(ch, req.log, unk.sql, unk.params, gone),
     ]);
     const labels: Record<string, string> = {};
     if (by === 'uid') {
@@ -151,6 +159,7 @@ export function historyRoutes(app: FastifyInstance, deps: { clickhouse: ClickHou
     }
     const out = buildThroughput(rows, r, dir, labels);
     if (ghostRows && first) out.compare = buildCompare(ghostRows, r, offset, first[0] ? Number(first[0].first) * 1000 : null);
+    if (unkRows) out.unknown = buildUnknown(unkRows, r);
     return out;
   });
 

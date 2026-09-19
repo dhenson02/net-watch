@@ -1,5 +1,12 @@
 import { useEffect, useMemo, useRef, type ReactNode, type RefObject } from 'react';
-import { THROUGHPUT_OTHER, type CompareOffset, type ThroughputBy, type ThroughputCompare, type ThroughputDir } from '../../shared/api.ts';
+import {
+  THROUGHPUT_OTHER,
+  type CompareOffset,
+  type ThroughputBy,
+  type ThroughputCompare,
+  type ThroughputDir,
+  type ThroughputResponse,
+} from '../../shared/api.ts';
 import type { TimeRange } from '../api.ts';
 import { EChart, useEChartRef } from '../charts/EChart.tsx';
 import type { EChartsCoreOption, EChartsType } from '../charts/echarts.ts';
@@ -68,11 +75,14 @@ type Props = {
   actions?: ReactNode;
   /** Receives the chart instance, e.g. for a hover marker from a track below (12). */
   chartRef?: RefObject<EChartsType | null>;
+  /** Also request the unknown-protocol share (16), passed to `below` as part of `answer`. */
+  unknown?: boolean;
   /**
-   * Rendered under the plot inside the panel (12's lifecycle track). `topKeys`
-   * are the answer's keys without "other", null while it loads or is stale.
+   * Rendered under the plot inside the panel (12's lifecycle track, 16's
+   * unknown share). `topKeys` are the answer's keys without "other"; they and
+   * `answer` are null while it loads or is stale.
    */
-  below?: (ctx: { topKeys: readonly string[] | null }) => ReactNode;
+  below?: (ctx: { topKeys: readonly string[] | null; answer: ThroughputResponse | null }) => ReactNode;
 };
 
 /**
@@ -83,12 +93,12 @@ type Props = {
  * dimension. `compare=1d|1w` (11) draws the same window that long before as
  * a dashed ghost behind the stack.
  */
-export function ThroughputChart({ range, slots, overlays, actions, chartRef, below }: Props) {
+export function ThroughputChart({ range, slots, overlays, actions, chartRef, unknown = false, below }: Props) {
   const p = useThroughputParams();
   const search = useSearch();
   const compare = useMemo(() => parseCompareParam(search), [search]);
   const ownSlots = useSlots();
-  const q = useThroughput(range, p, slots, ownSlots, compare);
+  const q = useThroughput(range, p, slots, ownSlots, compare, unknown);
   const scheme = useColorScheme();
   const ownChart = useEChartRef();
   const chart = chartRef ?? ownChart;
@@ -292,7 +302,7 @@ export function ThroughputChart({ range, slots, overlays, actions, chartRef, bel
           ariaLabel={`Throughput by ${byNoun}, ${p.dir === 'both' ? 'sent stacked above zero and received below' : 'stacked'}`}
         />
       </div>
-      {below?.({ topKeys })}
+      {below?.({ topKeys, answer: d && !q.stale ? d : null })}
     </Panel>
   );
 }

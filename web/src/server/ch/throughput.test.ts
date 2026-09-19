@@ -10,9 +10,13 @@ import {
   compareStep,
   kbps,
   parseCompare,
+  buildUnknown,
   parseDir,
+  parseUnknown,
   throughputQuery,
+  unknownQuery,
   type ThroughputRow,
+  type UnknownRow,
 } from './throughput.ts';
 
 const T0 = Date.UTC(2026, 8, 18, 12); // on every step boundary used here
@@ -175,4 +179,43 @@ test('buildCompare: a raw range gets minute buckets, the last one whole (minute 
   const c = buildCompare([crow(T0 + 120 * S, 3750, 0)], r, DAY, 0)!;
   assert.equal(c.t.length, 3);
   assert.equal(c.tx[2], kbps(3750, 60));
+});
+
+// ---------------------------------------------------------------------------
+// unknown share (16)
+
+const urow = (tMs: number, unk: number, total: number): UnknownRow => ({ t: tMs / 1000, unk: String(unk), total: String(total) });
+
+test('parseUnknown: 1 or 0, default off', () => {
+  assert.equal(parseUnknown(undefined), false);
+  assert.equal(parseUnknown(''), false);
+  assert.equal(parseUnknown('0'), false);
+  assert.equal(parseUnknown('1'), true);
+  for (const bad of ['true', 'yes', '2', ['1']]) assert.throws(() => parseUnknown(bad), /unknown/);
+});
+
+test('unknownQuery: the main buckets and table, filters in params only', () => {
+  const r = raw(T0, T0 + 3600 * S, 10);
+  const q = unknownQuery(r, { app: "x' OR 1=1 --", name: 'curl' });
+  assert.ok(!q.sql.includes("x' OR"));
+  assert.match(q.sql, /sumIf\(tx_bytes \+ rx_bytes, app = 'unknown'\) AS unk/);
+  assert.match(q.sql, /sum\(tx_bytes \+ rx_bytes\) AS total/);
+  assert.match(q.sql, /toStartOfInterval\(ts, INTERVAL \{step:UInt32\} SECOND\)/);
+  assert.match(q.sql, /FROM flows\s/);
+  assert.match(q.sql, /AND app = \{f_app:String\}/);
+  assert.deepEqual(q.params, { from: r.from, to: r.to, step: 10, f_app: "x' OR 1=1 --", f_name: 'curl' });
+  const long = rollup(T0, T0 + 86400 * S, 60);
+  assert.match(unknownQuery(long, {}).sql, /FROM flows_1m\s/);
+  assert.match(unknownQuery(long, { uid: 1000 }).sql, /LEFT JOIN/);
+});
+
+test('buildUnknown: per bucket on the throughput grid, share null without traffic', () => {
+  const r = raw(T0, T0 + 40 * S, 10);
+  const rows = [urow(T0, 25, 100), urow(T0 + 20 * S, 0, 50), urow(T0 + 30 * S, 3, 3), urow(T0 + 30 * S, 0, 3), urow(T0 + 90 * S, 1, 1)];
+  const out = buildUnknown(rows, r);
+  assert.deepEqual(out.bytes, [25, 0, 0, 3]);
+  assert.deepEqual(out.total, [100, 0, 50, 6]);
+  assert.deepEqual(out.share, [0.25, null, 0, 0.5]);
+  assert.equal(out.share.length, buildThroughput([], r, 'both').t.length);
+  assert.equal(buildUnknown([urow(T0, 1, 3)], r).share[0], 0.3333);
 });

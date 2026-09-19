@@ -32,9 +32,9 @@ export const urls = {
   liveFlows: (seconds: number) => `/api/live/flows?${qs({ seconds })}`,
   // The finest step the server allows (~1500 buckets), so a zoom always sharpens: raw
   // flows get 1 s buckets at a few minutes, not the 10 s default.
-  // `compare` (1d/1w) adds the earlier window's totals (11).
-  historyThroughput: (r: TimeRange, p: { by: string; dir: string; top: number; filters: UrlFilters }, compare?: string | null) =>
-    `/api/history/throughput?${qs({ from: r.from, to: r.to, step: Math.max(1, Math.ceil((r.to - r.from) / 1000 / 1500)), by: p.by, dir: p.dir, top: p.top, ...p.filters, compare: compare ?? undefined })}`,
+  // `compare` (1d/1w) adds the earlier window's totals (11); `unknown` the unlabelled share (16).
+  historyThroughput: (r: TimeRange, p: { by: string; dir: string; top: number; filters: UrlFilters }, compare?: string | null, unknown?: boolean) =>
+    `/api/history/throughput?${qs({ from: r.from, to: r.to, step: Math.max(1, Math.ceil((r.to - r.from) / 1000 / 1500)), by: p.by, dir: p.dir, top: p.top, ...p.filters, compare: compare ?? undefined, unknown: unknown ? 1 : undefined })}`,
   // `names` is comma-separated; omitted means the largest processes of any name.
   historyLifecycle: (r: TimeRange, p: { names?: readonly string[]; uid?: string; limit?: number } = {}) =>
     `/api/history/lifecycle?${qs({ from: r.from, to: r.to, names: p.names?.length ? p.names.join(',') : undefined, uid: p.uid, limit: p.limit })}`,

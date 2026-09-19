@@ -790,6 +790,27 @@ input:focus-visible {
   font-size: 11px;
 }
 
+/* Unknown-protocol share track under the History throughput (16) */
+.unknown-track {
+  margin-top: 2px;
+}
+
+.unknown-plot {
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.unknown-plot:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.unknown-note {
+  margin: 0;
+  padding-left: 64px;
+  font-size: 11px;
+}
+
 .tip-cmd {
   max-width: 320px;
   padding-left: 14px;

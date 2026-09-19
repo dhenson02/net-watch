@@ -10,6 +10,8 @@ import { parseEventsMode, type EventsMode } from '../history/clusterMarkers.ts';
 import { LifecycleTrack } from '../history/LifecycleTrack.tsx';
 import { ThroughputChart } from '../history/ThroughputChart.tsx';
 import { TxRxScatter } from '../history/TxRxScatter.tsx';
+import { UnknownShareTrack } from '../history/UnknownShareTrack.tsx';
+import { parseUnknownParam } from '../history/unknownShare.ts';
 import { BY_VALUES, filterParam } from '../history/throughputSeries.ts';
 import { useThroughputParams } from '../history/useThroughput.ts';
 import { useQuery } from '../hooks/useQuery.ts';
@@ -24,10 +26,17 @@ const EVENTS_OPTIONS = [
   { value: 'all', label: 'starts+ends', title: 'Mark process starts (first network I/O) and ends' },
 ] as const;
 
+const UNKNOWN_OPTIONS = [
+  { value: 'off', label: 'off' },
+  { value: 'on', label: 'on', title: 'A track under the chart: the share of bytes whose protocol the collector could not label' },
+] as const;
+
 export function HistoryPage() {
   const range = useTimeRange();
   const { by, filters } = useThroughputParams();
-  const events = parseEventsMode(new URLSearchParams(useSearch()).get('events'));
+  const search = useSearch();
+  const events = parseEventsMode(new URLSearchParams(search).get('events'));
+  const unknown = parseUnknownParam(search);
   const throughputChart = useEChartRef();
   const summary = useQuery<HistorySummary>(urls.historySummary(range, filters));
   const s = summary.data;
@@ -85,27 +94,42 @@ export function HistoryPage() {
           range={range}
           slots={slots}
           chartRef={throughputChart}
+          unknown={unknown}
           actions={
-            <SegmentedControl<EventsMode>
-              label="Process events"
-              options={EVENTS_OPTIONS}
-              value={events}
-              onChange={(v) => setSearchParams({ events: v === 'off' ? null : v })}
-            />
-          }
-          below={({ topKeys }) =>
-            events !== 'off' && (
-              <LifecycleTrack
-                range={range}
-                mode={events}
-                // A process filter, else the chart's processes when stacked by name, else the largest of any name.
-                names={filters.name !== undefined ? [filters.name] : by === 'name' ? topKeys : undefined}
-                uid={filters.uid}
-                slots={slots}
-                main={throughputChart}
+            <>
+              <SegmentedControl<EventsMode>
+                label="Process events"
+                options={EVENTS_OPTIONS}
+                value={events}
+                onChange={(v) => setSearchParams({ events: v === 'off' ? null : v })}
               />
-            )
+              <span className="ctl-group">
+                <span className="ctl-label">unknown share</span>
+                <SegmentedControl<'off' | 'on'>
+                  label="Share of bytes with an unknown protocol"
+                  options={UNKNOWN_OPTIONS}
+                  value={unknown ? 'on' : 'off'}
+                  onChange={(v) => setSearchParams({ unknown: v === 'on' ? '1' : null })}
+                />
+              </span>
+            </>
           }
+          below={({ topKeys, answer }) => (
+            <>
+              {events !== 'off' && (
+                <LifecycleTrack
+                  range={range}
+                  mode={events}
+                  // A process filter, else the chart's processes when stacked by name, else the largest of any name.
+                  names={filters.name !== undefined ? [filters.name] : by === 'name' ? topKeys : undefined}
+                  uid={filters.uid}
+                  slots={slots}
+                  main={throughputChart}
+                />
+              )}
+              {unknown && <UnknownShareTrack range={range} answer={answer} main={throughputChart} />}
+            </>
+          )}
         />
 
         <TxRxScatter range={range} filters={filters} slots={slots} />

@@ -266,6 +266,22 @@ export interface ThroughputResponse {
    * when the earlier window predates all the data.
    */
   compare?: ThroughputCompare | null;
+  /** Present when `unknown=1` was requested (16): the classifier's unlabelled share. */
+  unknown?: ThroughputUnknown;
+}
+
+/**
+ * Per bucket of a throughput answer (aligned with its `t`), the bytes (tx +
+ * rx, whatever `dir` is) the classifier labelled `unknown`, with the page's
+ * filters applied.
+ */
+export interface ThroughputUnknown {
+  /** unknown / total, 0..1; null where the bucket had no traffic at all. */
+  share: (number | null)[];
+  /** Bytes labelled unknown. */
+  bytes: number[];
+  /** All bytes, for "220 MiB of 1.5 GiB". */
+  total: number[];
 }
 
 /** `compare=` values: the offset of the ghost window. */

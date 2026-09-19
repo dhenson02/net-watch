@@ -11,6 +11,7 @@ import { useColorScheme } from '../charts/useColorScheme.ts';
 import { useQuery } from '../hooks/useQuery.ts';
 import { navigate } from '../router.ts';
 import { clusterMarkers, clusterTitle, lifecycleEvents, processPath, type EventKind, type MarkerCluster } from './clusterMarkers.ts';
+import { useFollowZoom } from './useFollowZoom.ts';
 
 /** The markers' plot height (px), plus a little room above and below. */
 const TRACK = 36;
@@ -55,25 +56,9 @@ export function LifecycleTrack({ range, mode, names, uid, slots, main }: Props) 
     return () => ro.disconnect();
   }, []);
 
-  // Follow the throughput chart's zoom (slider, ctrl+wheel) until it commits
-  // a new range. Not linked through the `history` group: that would also
-  // replay this track's item tooltips on the chart above, by data index.
+  // Follow the throughput chart's zoom until it commits a new range.
   const track = useEChartRef();
-  const followed = useRef<EChartsType | null>(null);
-  useEffect(() => {
-    const m = main.current;
-    if (!m || m === followed.current) return;
-    followed.current = m;
-    const onZoom = () => {
-      const dz = (m.getOption() as { dataZoom?: { start?: number; end?: number }[] }).dataZoom?.[0];
-      if (dz) track.current?.dispatchAction({ type: 'dataZoom', start: dz.start ?? 0, end: dz.end ?? 100 });
-    };
-    m.on('datazoom', onZoom);
-    return () => {
-      m.off('datazoom', onZoom);
-      followed.current = null;
-    };
-  });
+  useFollowZoom(main, track);
 
   const d = q.data;
   const clusters = useMemo<Record<EventKind, MarkerCluster[]>>(() => {
