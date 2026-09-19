@@ -764,3 +764,166 @@ input:focus-visible {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+
+/* Top-talkers table (02) */
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.tt-filter {
+  width: 200px;
+  max-width: 100%;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.table-scroll {
+  overflow-x: auto;
+  margin: 0 -16px;
+  padding: 0 16px;
+}
+
+.tt {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.tt th {
+  padding: 4px 8px 6px;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.tt td {
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.tt tbody tr {
+  cursor: pointer;
+}
+
+.tt tbody tr:hover {
+  background: var(--bg);
+}
+
+.tt tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.tt .tt-num {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.th-sort {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.th-sort:hover,
+.th-sort.active {
+  color: var(--text);
+}
+
+.th-arrow {
+  display: inline-block;
+  width: 0.8em;
+  text-align: center;
+}
+
+.tt-status {
+  width: 20px;
+  padding-right: 0 !important;
+}
+
+.tt-status .dot {
+  margin: 0;
+}
+
+.tt-name {
+  /* With width:100%, the name column takes the slack and its cmdline ellipsizes. */
+  width: 100%;
+  max-width: 0;
+}
+
+.tt-name > * {
+  min-width: 160px;
+}
+
+.tt-proc {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.tt-cmd {
+  overflow: hidden;
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tt-pid,
+.tt-age,
+.tt-totals {
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.tt-rate {
+  min-width: 96px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.tt-bar {
+  display: block;
+  height: 3px;
+  margin-top: 3px;
+  border-radius: 2px;
+  background: var(--chart-grid);
+  overflow: hidden;
+}
+
+.tt-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+}
+
+.tt-spark {
+  width: 120px;
+  line-height: 0;
+}
+
+.tt-ended {
+  opacity: 0.55;
+}
+
+.tt-stale {
+  margin: 0 0 8px;
+  color: var(--warn);
+}

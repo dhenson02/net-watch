@@ -1,12 +1,11 @@
-import { useMemo } from 'react';
-import { fmtDuration, fmtRate, fmtTime } from '../charts/format.ts';
+import { fmtDuration, fmtTime } from '../charts/format.ts';
 import { useSlots } from '../charts/useSlots.ts';
 import { Panel } from '../components/Panel.tsx';
 import { useLive, type LiveStatus } from '../hooks/useLive.ts';
 import { useNow } from '../hooks/useNow.ts';
 import { HealthStrip } from '../live/HealthStrip.tsx';
 import { LiveThroughput } from '../live/LiveThroughput.tsx';
-import { Link } from '../router.ts';
+import { TopTalkers } from '../live/TopTalkers.tsx';
 
 const STATUS_TEXT: Record<LiveStatus, string> = { connecting: 'connecting…', live: 'connected', reconnecting: 'reconnecting…' };
 
@@ -16,7 +15,6 @@ export function LivePage() {
   const slots = useSlots();
 
   const last = live.ticks.at(-1);
-  const top = useMemo(() => [...(last?.procs ?? [])].sort((a, b) => b.tx + b.rx - (a.tx + a.rx)).slice(0, 8), [last]);
   const age = live.latestTs === null ? null : now - live.latestTs;
   const stale = age !== null && last !== undefined && age > 3 * last.intervalMs;
 
@@ -46,26 +44,7 @@ export function LivePage() {
           {stale && <p className="note">No new ticks for {fmtDuration(age!)}. The collector may be stopped.</p>}
         </Panel>
 
-        <Panel title="Active now" subtitle="Highest tx + rx in the latest tick">
-          {top.length ? (
-            <ol className="plain-list">
-              {top.map((p) => {
-                const [pid, start] = p.id.split(':');
-                return (
-                  <li key={p.id}>
-                    <Link href={`/process/${pid}/${start}`}>{p.name}</Link>
-                    <span className="muted"> {pid}</span>
-                    <span className="num">
-                      ↑ {fmtRate(p.tx)} · ↓ {fmtRate(p.rx)}
-                    </span>
-                  </li>
-                );
-              })}
-            </ol>
-          ) : (
-            <p className="muted">No traffic in the latest tick.</p>
-          )}
-        </Panel>
+        <TopTalkers />
       </div>
     </>
   );

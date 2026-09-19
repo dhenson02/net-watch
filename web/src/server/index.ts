@@ -10,6 +10,7 @@ import { healthRoutes } from './routes/health.ts';
 import { historyRoutes } from './routes/history.ts';
 import { liveRoutes } from './routes/live.ts';
 import { processRoutes } from './routes/process.ts';
+import { Users } from './users.ts';
 
 const app = Fastify({ logger: { level: config.logLevel } });
 
@@ -17,8 +18,11 @@ const redis = createRedis(config.redisUrl, app.log);
 const clickhouse = createClickHouse(config.clickhouse);
 const hub = new LiveHub(redis, app.log, config.liveBackfill);
 hub.start();
+const users = new Users(app.log);
+await users.start();
 app.addHook('onClose', async () => {
   await hub.stop();
+  users.stop();
   redis.destroy();
   await clickhouse.close();
 });
@@ -32,7 +36,7 @@ app.setErrorHandler((err: Error & { statusCode?: number }, req, reply) => {
   return reply.code(status).send({ error: expose ? err.message : 'internal error' });
 });
 
-const deps = { redis, clickhouse, hub };
+const deps = { redis, clickhouse, hub, users };
 healthRoutes(app, deps);
 liveRoutes(app, deps);
 historyRoutes(app, deps);

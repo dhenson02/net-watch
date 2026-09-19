@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import type { LiveSnapshot } from '../../shared/api.ts';
-import { compactTick, parseSnapshot } from './compact.ts';
+import { CMDLINE_MAX, compactTick, parseSnapshot, snapshotRows } from './compact.ts';
 import { compareIds } from './hub.ts';
 
 // The collector's `sample_tick()` (net-watch/src/model.rs) as serialized to
@@ -66,4 +66,39 @@ test('orders stream ids numerically', () => {
   assert.equal(compareIds('1789775759049-0', '1789775759049-0'), 0);
   assert.equal(compareIds('999-5', '1000-0'), -1); // not lexicographic
   assert.equal(compareIds('1000-10', '1000-9'), 1);
+});
+
+test('reduces a snapshot to table rows', () => {
+  const s = parseSnapshot(sample);
+  const [p] = s.processes;
+  const [f] = s.flows;
+  s.processes.push({ ...p!, pid: 7, uid: 4321, cmdline: 'x'.repeat(1000), ended_ms: s.ts_ms - 5 });
+  s.flows.push({ ...f!, rport: 80 });
+  const r = snapshotRows(s, (uid) => (uid === 1000 ? 'alice' : null));
+  assert.equal(r.ts, s.ts_ms);
+  assert.equal(r.intervalMs, 1000);
+  assert.deepEqual(r.processes[0], {
+    id: '4242:1',
+    pid: 4242,
+    startNs: '1',
+    name: 'curl',
+    cmdline: 'curl https://example.com',
+    uid: 1000,
+    user: 'alice',
+    startMs: 1789775754048,
+    firstSeenMs: 1789775759048,
+    lastSeenMs: 1789775759048,
+    endedMs: null,
+    txKbps: 12,
+    rxKbps: 512,
+    txTotal: 1500,
+    rxTotal: 64000,
+    nFlows: 2,
+  });
+  const q = r.processes[1]!;
+  assert.equal(q.user, null);
+  assert.equal(q.nFlows, 0);
+  assert.equal(q.endedMs, s.ts_ms - 5);
+  assert.equal(q.cmdline.length, CMDLINE_MAX);
+  assert.ok(q.cmdline.endsWith('…'));
 });

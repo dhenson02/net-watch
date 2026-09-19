@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { after, before, test } from 'node:test';
-import type { CompactTick, HealthResponse, HistoryIngest, HistorySummary, LiveMeta, LiveSnapshot, ProcessInfo } from '../shared/api.ts';
+import type { CompactTick, HealthResponse, HistoryIngest, HistorySummary, LiveMeta, LiveSnapshotResponse, ProcessInfo } from '../shared/api.ts';
 import { DISPLAY_IP } from './ch/sql.ts';
 import { config } from './config.ts';
 import { createClickHouse } from './db/clickhouse.ts';
@@ -58,14 +58,18 @@ test('live series: compact ticks, oldest first', async () => {
   assert.equal((await get('/api/live/series?seconds=0')).status, 400);
 });
 
-test('live snapshot: start_ns kept as a string', async () => {
-  const { status, body } = await get<LiveSnapshot>('/api/live/snapshot');
+test('live snapshot: process rows, ids kept as strings', async () => {
+  const { status, body } = await get<LiveSnapshotResponse>('/api/live/snapshot');
   if (status === 503) return; // stream empty: nothing to check
   assert.equal(status, 200);
-  for (const p of body.processes) assert.equal(typeof p.start_ns, 'string');
-  for (const f of body.flows) {
-    assert.equal(typeof f.start_ns, 'string');
-    assert.doesNotMatch(f.raddr, /^::ffff:\d/, 'IPv4 shown plain');
+  assert.equal(typeof body.ts, 'number');
+  assert.equal(typeof body.serverTimeMs, 'number');
+  for (const p of body.processes) {
+    assert.equal(typeof p.startNs, 'string');
+    assert.equal(p.id, `${p.pid}:${p.startNs}`);
+    assert.ok(p.cmdline.length <= 300, 'cmdline truncated');
+    assert.ok(p.user === null || typeof p.user === 'string');
+    assert.equal(typeof p.nFlows, 'number');
   }
 });
 

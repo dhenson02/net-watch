@@ -1,10 +1,12 @@
 import type { ServerResponse } from 'node:http';
 import type { FastifyInstance } from 'fastify';
-import type { CompactTick, LiveHello, LiveMeta, LiveSnapshot } from '../../shared/api.ts';
+import type { CompactTick, LiveHello, LiveMeta, LiveSnapshot, LiveSnapshotResponse } from '../../shared/api.ts';
 import type { Redis } from '../db/redis.ts';
 import { HttpError } from '../http-error.ts';
+import { snapshotRows } from '../live/compact.ts';
 import type { LiveHub } from '../live/hub.ts';
 import { withTimeout } from '../timeout.ts';
+import type { Users } from '../users.ts';
 
 const KEEPALIVE_MS = 15_000;
 /** A client this far behind is dropped; EventSource reconnects and re-syncs. */
@@ -13,8 +15,8 @@ const MAX_BUFFERED_BYTES = 1 << 20;
 /** A numeric hash field, or null when the collector has not written it. */
 const num = (v: string | undefined) => (v === undefined || v === '' || !Number.isFinite(Number(v)) ? null : Number(v));
 
-export function liveRoutes(app: FastifyInstance, deps: { hub: LiveHub; redis: Redis }) {
-  const { hub, redis } = deps;
+export function liveRoutes(app: FastifyInstance, deps: { hub: LiveHub; redis: Redis; users: Users }) {
+  const { hub, redis, users } = deps;
 
   app.get<{ Querystring: { seconds?: string } }>('/api/live/series', async (req): Promise<CompactTick[]> => {
     const raw = req.query.seconds ?? '900';
@@ -23,11 +25,14 @@ export function liveRoutes(app: FastifyInstance, deps: { hub: LiveHub; redis: Re
     return hub.series(seconds);
   });
 
-  // Polled by the live table, so it is not request-logged.
-  app.get('/api/live/snapshot', { logLevel: 'warn' }, async (): Promise<LiveSnapshot> => {
+  // Polled every 2 s by the top-talkers table, so it is not request-logged.
+  // Every tab asks for the same snapshot, so the reduced form is kept until the next tick.
+  let reduced: { snap: LiveSnapshot; res: Omit<LiveSnapshotResponse, 'serverTimeMs'> } | null = null;
+  app.get('/api/live/snapshot', { logLevel: 'warn' }, async (): Promise<LiveSnapshotResponse> => {
     const snap = hub.latest();
     if (!snap) throw new HttpError(503, 'no live data yet');
-    return snap;
+    if (reduced?.snap !== snap) reduced = { snap, res: snapshotRows(snap, (uid) => users.name(uid)) };
+    return { ...reduced.res, serverTimeMs: Date.now() };
   });
 
   // Polled every 5 s by the health strip, so it is not request-logged.

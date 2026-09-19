@@ -1,4 +1,7 @@
-import type { CompactTick, LiveSnapshot } from '../../shared/api.ts';
+import type { CompactTick, LiveSnapshot, LiveSnapshotResponse } from '../../shared/api.ts';
+
+/** Longer cmdlines are cut in the live table; the process page reads the full one. */
+export const CMDLINE_MAX = 300;
 
 // JSON.parse source text access (Node >= 21): the third reviver argument holds
 // the raw text of primitive values. Not in TypeScript's lib yet.
@@ -54,5 +57,39 @@ export function compactTick(s: LiveSnapshot): CompactTick {
     rxKbps: r2(rxKbps),
     procs,
     apps,
+  };
+}
+
+/** A snapshot reduced to its process list, for the top-talkers table. */
+export function snapshotRows(s: LiveSnapshot, user: (uid: number) => string | null): Omit<LiveSnapshotResponse, 'serverTimeMs'> {
+  const flows = new Map<string, number>();
+  for (const f of s.flows) {
+    const id = `${f.pid}:${f.start_ns}`;
+    flows.set(id, (flows.get(id) ?? 0) + 1);
+  }
+  return {
+    ts: s.ts_ms,
+    intervalMs: s.interval_ms,
+    processes: s.processes.map((p) => {
+      const id = `${p.pid}:${p.start_ns}`;
+      return {
+        id,
+        pid: p.pid,
+        startNs: p.start_ns,
+        name: p.name,
+        cmdline: p.cmdline.length > CMDLINE_MAX ? `${p.cmdline.slice(0, CMDLINE_MAX - 1)}…` : p.cmdline,
+        uid: p.uid,
+        user: user(p.uid),
+        startMs: p.start_ms,
+        firstSeenMs: p.first_seen_ms,
+        lastSeenMs: p.last_seen_ms,
+        endedMs: p.ended_ms,
+        txKbps: p.tx_kbps,
+        rxKbps: p.rx_kbps,
+        txTotal: p.tx_total,
+        rxTotal: p.rx_total,
+        nFlows: flows.get(id) ?? 0,
+      };
+    }),
   };
 }

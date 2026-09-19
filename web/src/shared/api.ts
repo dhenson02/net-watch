@@ -93,6 +93,40 @@ export interface CompactTick {
   gap?: true;
 }
 
+/** One process in `/api/live/snapshot` (the top-talkers table). Rates are kbps. */
+export interface LiveProcessRow {
+  /** `pid:start_ns` */
+  id: string;
+  pid: number;
+  startNs: string;
+  name: string;
+  /** Truncated to 300 chars; the full value is in `netwatch:proc:{id}`. */
+  cmdline: string;
+  uid: number;
+  /** Username from the server's /etc/passwd, null when the uid has none. */
+  user: string | null;
+  startMs: number;
+  firstSeenMs: number;
+  lastSeenMs: number;
+  /** Set for processes that ended in the last 60 s. */
+  endedMs: number | null;
+  txKbps: number;
+  rxKbps: number;
+  txTotal: number;
+  rxTotal: number;
+  /** This tick's flows of this process. */
+  nFlows: number;
+}
+
+/** The hub's latest snapshot reduced to its process list. */
+export interface LiveSnapshotResponse {
+  /** The API server's clock when it answered, to correct for browser clock skew. */
+  serverTimeMs: number;
+  ts: number;
+  intervalMs: number;
+  processes: LiveProcessRow[];
+}
+
 /** `netwatch:meta` plus the process set sizes, for the health strip. */
 export interface LiveMeta {
   /** The API server's clock when it answered, to correct for browser clock skew. */
