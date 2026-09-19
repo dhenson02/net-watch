@@ -905,6 +905,69 @@ input:focus-visible {
   padding: 0 16px;
 }
 
+/* Top talkers: filters on the left, table in a fixed-height scroller so rows
+   coming and going never change the panel height. */
+.tt-layout {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.tt-side {
+  flex: 0 0 200px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.tt-side .tt-filter {
+  width: 100%;
+}
+
+.tt-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.table-scroll.tt-scroll {
+  height: 480px;
+  overflow: auto;
+  margin: 0;
+  padding: 0;
+}
+
+.tt-scroll .tt th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface);
+}
+
+.tt-empty {
+  padding: 48px 16px;
+  color: var(--muted);
+  text-align: center;
+}
+
+@media (max-width: 800px) {
+  .tt-layout {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .tt-side {
+    flex-basis: auto;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  .tt-side .tt-filter {
+    width: 200px;
+  }
+}
+
 .tt {
   width: 100%;
   border-collapse: collapse;

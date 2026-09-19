@@ -72,6 +72,8 @@ export function TopTalkers() {
   const [filter, setFilter] = useSearchParam('q', '');
   const [idleParam, setIdleParam] = useSearchParam('idle', 'hide');
   const hideIdle = idleParam !== 'show';
+  const [endedParam, setEndedParam] = useSearchParam('ended', 'show');
+  const hideEnded = endedParam === 'hide';
   const sort = parseSort(sortParam);
   const onSort = (k: SortKey) => setSortParam(formatSort(nextSort(sort, k)), { replace: true });
 
@@ -81,7 +83,8 @@ export function TopTalkers() {
   const view = useMemo(() => {
     const all = rows ?? [];
     const matched = all.filter((r) => matchesFilter(r, filter));
-    const shown = hideIdle ? matched.filter((r) => !isIdle(r, sparks.get(r.id), live.latestTs)) : matched;
+    const current = hideEnded ? matched.filter((r) => r.endedMs === null) : matched;
+    const shown = hideIdle ? current.filter((r) => !isIdle(r, sparks.get(r.id), live.latestTs)) : current;
     const sorted = sortRows(shown, sort, sparks);
     const visible = sorted.slice(0, MAX_ROWS);
     let max = 0;
@@ -90,11 +93,12 @@ export function TopTalkers() {
       visible,
       overflow: sorted.length - visible.length,
       filtered: all.length - matched.length,
-      idle: matched.length - shown.length,
+      ended: matched.length - current.length,
+      idle: current.length - shown.length,
       total: all.length,
       max,
     };
-  }, [rows, filter, hideIdle, sort.key, sort.desc, sparks, live.latestTs]);
+  }, [rows, filter, hideIdle, hideEnded, sort.key, sort.desc, sparks, live.latestTs]);
 
   const serverNow = snap.serverNow(now);
 
@@ -107,10 +111,12 @@ export function TopTalkers() {
     else navigate(processHref(r));
   };
 
-  const hiddenParts = [view.filtered > 0 && `${view.filtered} not matching “${filter.trim()}”`, view.idle > 0 && `${view.idle} idle`].filter(Boolean);
+  const hiddenParts = [view.filtered > 0 && `${view.filtered} not matching “${filter.trim()}”`, view.ended > 0 && `${view.ended} ended`, view.idle > 0 && `${view.idle} idle`].filter(Boolean);
 
-  const actions = (
-    <>
+  const emptyText = rows && view.visible.length === 0 ? (view.total ? 'No process matches.' : 'No processes in the latest tick.') : null;
+
+  const filters = (
+    <aside className="tt-side" aria-label="Filters">
       <input
         type="search"
         className="tt-filter"
@@ -120,12 +126,18 @@ export function TopTalkers() {
         onChange={(e) => setFilter(e.target.value, { replace: true })}
       />
       <Toggle
+        label="hide ended"
+        title="Hide processes that have ended"
+        checked={hideEnded}
+        onChange={(on) => setEndedParam(on ? 'hide' : 'show', { replace: true })}
+      />
+      <Toggle
         label="hide idle"
         title="Hide live processes with no traffic in the last 30 s"
         checked={hideIdle}
         onChange={(on) => setIdleParam(on ? 'hide' : 'show', { replace: true })}
       />
-    </>
+    </aside>
   );
 
   return (
@@ -137,100 +149,104 @@ export function TopTalkers() {
           ? `${view.visible.length + view.overflow} of ${view.total} processes${hiddenParts.length ? ` · hidden: ${hiddenParts.join(', ')}` : ''}`
           : 'Live processes and those that ended in the last 60 s'
       }
-      actions={actions}
       loading={!snap.data && !snap.error}
       error={!snap.data ? snap.error : null}
-      empty={rows && view.visible.length === 0 ? (view.total ? 'No process matches.' : 'No processes in the latest tick.') : undefined}
     >
       {snap.data && snap.error && <p className="note tt-stale">Refresh failed ({snap.error}); showing the last good list.</p>}
-      <div className="table-scroll">
-        <table className="tt">
-          <thead>
-            <tr>
-              <th className="tt-status">
-                <span className="sr-only">status</span>
-              </th>
-              <th aria-sort={ariaSort(sort, 'name')}>
-                <SortButton sort={sort} k="name" label="name" onSort={onSort} />
-              </th>
-              <th aria-sort={ariaSort(sort, 'pid', 'user')}>
-                <SortButton sort={sort} k="pid" label="pid" onSort={onSort} />
-                <span className="muted"> / </span>
-                <SortButton sort={sort} k="user" label="user" onSort={onSort} />
-              </th>
-              <th className="tt-num" aria-sort={ariaSort(sort, 'tx')}>
-                <SortButton sort={sort} k="tx" label="↑ tx" title="Current send rate" onSort={onSort} />
-              </th>
-              <th className="tt-num" aria-sort={ariaSort(sort, 'rx')}>
-                <SortButton sort={sort} k="rx" label="↓ rx" title="Current receive rate" onSort={onSort} />
-              </th>
-              <th aria-sort={ariaSort(sort, 'spark')}>
-                <SortButton sort={sort} k="spark" label="60 s" title="Last 60 s: tx above the line, rx below. Sorts by traffic over the window." onSort={onSort} />
-              </th>
-              <th className="tt-num" aria-sort={ariaSort(sort, 'flows')}>
-                <SortButton sort={sort} k="flows" label="flows" title="Flows in the latest tick" onSort={onSort} />
-              </th>
-              <th className="tt-num" aria-sort={ariaSort(sort, 'txTotal', 'rxTotal')}>
-                <SortButton sort={sort} k="txTotal" label="total ↑" title="Bytes sent over the process lifetime" onSort={onSort} />
-                <span className="muted"> / </span>
-                <SortButton sort={sort} k="rxTotal" label="↓" title="Bytes received over the process lifetime" onSort={onSort} />
-              </th>
-              <th className="tt-num" aria-sort={ariaSort(sort, 'age')}>
-                <SortButton sort={sort} k="age" label="age" onSort={onSort} />
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {view.visible.map((r) => {
-              const ended = r.endedMs !== null;
-              const spark = sparks.get(r.id);
-              return (
-                <tr key={r.id} className={ended ? 'tt-ended' : undefined} onClick={(e) => onRowClick(e, r)}>
-                  <td className="tt-status">
-                    <span
-                      className={`dot ${ended ? '' : 'dot-ok'}`}
-                      role="img"
-                      aria-label={ended ? 'ended' : 'live'}
-                      title={ended ? 'ended' : 'live'}
-                    />
-                  </td>
-                  <td className="tt-name">
-                    <Link href={processHref(r)} className="tt-proc">
-                      {r.name}
-                    </Link>
-                    <div className="tt-cmd" title={r.cmdline}>
-                      {r.cmdline || ' '}
-                    </div>
-                  </td>
-                  <td className="num tt-pid">
-                    {r.pid}
-                    <div className="muted" title={`uid ${r.uid}`}>
-                      {userLabel(r)}
-                    </div>
-                  </td>
-                  <RateCell kbps={r.txKbps} max={view.max} color={TX[scheme]} />
-                  <RateCell kbps={r.rxKbps} max={view.max} color={RX[scheme]} />
-                  <td className="tt-spark">{spark && spark.tx.length > 0 ? <Sparkline tx={spark.tx} rx={spark.rx} fmt={fmtRate} /> : null}</td>
-                  <td className="num tt-num">{r.nFlows}</td>
-                  <td className="num tt-num tt-totals">
-                    ↑ {fmtBytes(r.txTotal)}
-                    <div>↓ {fmtBytes(r.rxTotal)}</div>
-                  </td>
-                  <td className="num tt-num tt-age">
-                    {serverNow === null ? '—' : fmtDuration(Math.max(0, serverNow - r.startMs))}
-                    {ended && serverNow !== null && <div className="muted">ended {ago(Math.max(0, serverNow - r.endedMs!))}</div>}
-                  </td>
+      <div className="tt-layout">
+        {filters}
+        <div className="tt-main">
+          <div className="table-scroll tt-scroll">
+            <table className="tt">
+              <thead>
+                <tr>
+                  <th className="tt-status">
+                    <span className="sr-only">status</span>
+                  </th>
+                  <th aria-sort={ariaSort(sort, 'name')}>
+                    <SortButton sort={sort} k="name" label="name" onSort={onSort} />
+                  </th>
+                  <th aria-sort={ariaSort(sort, 'pid', 'user')}>
+                    <SortButton sort={sort} k="pid" label="pid" onSort={onSort} />
+                    <span className="muted"> / </span>
+                    <SortButton sort={sort} k="user" label="user" onSort={onSort} />
+                  </th>
+                  <th className="tt-num" aria-sort={ariaSort(sort, 'tx')}>
+                    <SortButton sort={sort} k="tx" label="↑ tx" title="Current send rate" onSort={onSort} />
+                  </th>
+                  <th className="tt-num" aria-sort={ariaSort(sort, 'rx')}>
+                    <SortButton sort={sort} k="rx" label="↓ rx" title="Current receive rate" onSort={onSort} />
+                  </th>
+                  <th aria-sort={ariaSort(sort, 'spark')}>
+                    <SortButton sort={sort} k="spark" label="60 s" title="Last 60 s: tx above the line, rx below. Sorts by traffic over the window." onSort={onSort} />
+                  </th>
+                  <th className="tt-num" aria-sort={ariaSort(sort, 'flows')}>
+                    <SortButton sort={sort} k="flows" label="flows" title="Flows in the latest tick" onSort={onSort} />
+                  </th>
+                  <th className="tt-num" aria-sort={ariaSort(sort, 'txTotal', 'rxTotal')}>
+                    <SortButton sort={sort} k="txTotal" label="total ↑" title="Bytes sent over the process lifetime" onSort={onSort} />
+                    <span className="muted"> / </span>
+                    <SortButton sort={sort} k="rxTotal" label="↓" title="Bytes received over the process lifetime" onSort={onSort} />
+                  </th>
+                  <th className="tt-num" aria-sort={ariaSort(sort, 'age')}>
+                    <SortButton sort={sort} k="age" label="age" onSort={onSort} />
+                  </th>
                 </tr>
-              );
-            })}
-          </tbody>
-        </table>
+              </thead>
+              <tbody>
+                {view.visible.map((r) => {
+                  const ended = r.endedMs !== null;
+                  const spark = sparks.get(r.id);
+                  return (
+                    <tr key={r.id} className={ended ? 'tt-ended' : undefined} onClick={(e) => onRowClick(e, r)}>
+                      <td className="tt-status">
+                        <span
+                          className={`dot ${ended ? '' : 'dot-ok'}`}
+                          role="img"
+                          aria-label={ended ? 'ended' : 'live'}
+                          title={ended ? 'ended' : 'live'}
+                        />
+                      </td>
+                      <td className="tt-name">
+                        <Link href={processHref(r)} className="tt-proc">
+                          {r.name}
+                        </Link>
+                        <div className="tt-cmd" title={r.cmdline}>
+                          {r.cmdline || ' '}
+                        </div>
+                      </td>
+                      <td className="num tt-pid">
+                        {r.pid}
+                        <div className="muted" title={`uid ${r.uid}`}>
+                          {userLabel(r)}
+                        </div>
+                      </td>
+                      <RateCell kbps={r.txKbps} max={view.max} color={TX[scheme]} />
+                      <RateCell kbps={r.rxKbps} max={view.max} color={RX[scheme]} />
+                      <td className="tt-spark">{spark && spark.tx.length > 0 ? <Sparkline tx={spark.tx} rx={spark.rx} fmt={fmtRate} /> : null}</td>
+                      <td className="num tt-num">{r.nFlows}</td>
+                      <td className="num tt-num tt-totals">
+                        ↑ {fmtBytes(r.txTotal)}
+                        <div>↓ {fmtBytes(r.rxTotal)}</div>
+                      </td>
+                      <td className="num tt-num tt-age">
+                        {serverNow === null ? '—' : fmtDuration(Math.max(0, serverNow - r.startMs))}
+                        {ended && serverNow !== null && <div className="muted">ended {ago(Math.max(0, serverNow - r.endedMs!))}</div>}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            {emptyText && <div className="tt-empty">{emptyText}</div>}
+          </div>
+          {view.overflow > 0 && (
+            <p className="note">
+              {view.overflow} more {view.overflow === 1 ? 'row' : 'rows'} not shown (first {MAX_ROWS} only). Use the filter to narrow the list.
+            </p>
+          )}
+        </div>
       </div>
-      {view.overflow > 0 && (
-        <p className="note">
-          {view.overflow} more {view.overflow === 1 ? 'row' : 'rows'} not shown (first {MAX_ROWS} only). Use the filter to narrow the list.
-        </p>
-      )}
     </Panel>
   );
 }
