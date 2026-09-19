@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { after, before, test } from 'node:test';
-import type { CompactTick, HealthResponse, HistorySummary, LiveSnapshot, ProcessInfo } from '../shared/api.ts';
+import type { CompactTick, HealthResponse, HistoryIngest, HistorySummary, LiveMeta, LiveSnapshot, ProcessInfo } from '../shared/api.ts';
 import { DISPLAY_IP } from './ch/sql.ts';
 import { config } from './config.ts';
 import { createClickHouse } from './db/clickhouse.ts';
@@ -69,6 +69,14 @@ test('live snapshot: start_ns kept as a string', async () => {
   }
 });
 
+test('live meta: numbers or null', async () => {
+  const { status, body } = await get<LiveMeta>('/api/live/meta');
+  assert.equal(status, 200);
+  assert.equal(typeof body.serverTimeMs, 'number');
+  for (const k of ['alive', 'ended'] as const) assert.equal(typeof body[k], 'number', k);
+  for (const k of ['lastTickMs', 'intervalMs', 'drops'] as const) assert.ok(body[k] === null || typeof body[k] === 'number', k);
+});
+
 test('live events: hello first', async () => {
   const ctrl = new AbortController();
   const res = await fetch(`${BASE}/api/live/events`, { signal: ctrl.signal });
@@ -93,6 +101,16 @@ test('history summary: shape, resolution and validation', async () => {
   const bad = await get<{ error: string }>(`/api/history/summary?from=${now}&to=${now - 1}`);
   assert.equal(bad.status, 400);
   assert.equal(typeof bad.body.error, 'string');
+});
+
+test('history ingest: latest ts in ms, rows in the last minute', async () => {
+  const { status, body } = await get<HistoryIngest>('/api/history/ingest');
+  assert.equal(status, 200);
+  assert.equal(typeof body.rows1m, 'number');
+  if (body.lastTsMs !== null) {
+    assert.equal(typeof body.lastTsMs, 'number');
+    assert.ok(Math.abs(body.serverTimeMs - body.lastTsMs) < 11 * 60_000, 'within the 10 min window');
+  }
 });
 
 test('process: found by pid:start_ns, 404 otherwise', async () => {

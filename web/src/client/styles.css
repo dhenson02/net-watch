@@ -533,3 +533,136 @@ input:focus-visible {
   font-weight: 600;
   letter-spacing: -0.01em;
 }
+
+/* Health strip (Live page header) */
+
+.health-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+  margin-bottom: var(--gutter);
+}
+
+@media (max-width: 480px) {
+  .health-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.stat-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.stat-tile.tone-ok {
+  border-left-color: var(--ok);
+}
+
+.stat-tile.tone-warn {
+  border-left-color: var(--warn);
+}
+
+.stat-tile.tone-bad {
+  border-left-color: var(--down);
+}
+
+.stat-tile-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.stat-tile .stat-label {
+  margin: 0;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.stat-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.stat-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 9px;
+  line-height: 1;
+}
+
+.tone-ok .stat-status {
+  color: var(--ok);
+}
+
+.tone-ok .stat-icon {
+  background: var(--ok);
+}
+
+.tone-warn .stat-status {
+  color: var(--warn);
+}
+
+.tone-warn .stat-icon {
+  background: var(--warn);
+}
+
+.tone-bad .stat-status {
+  color: var(--down);
+}
+
+.tone-bad .stat-icon {
+  background: var(--down);
+}
+
+.stat-tile .stat-value {
+  font-size: 20px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.stat-unit {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.stat-pair {
+  display: inline-flex;
+  flex-wrap: wrap;
+  column-gap: 8px;
+  font-size: 16px;
+}
+
+.stat-spark {
+  line-height: 0;
+}
+
+.sparkline {
+  display: block;
+  overflow: visible;
+}
+
+.stat-sub {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}

@@ -1,15 +1,20 @@
 import type { ServerResponse } from 'node:http';
 import type { FastifyInstance } from 'fastify';
-import type { CompactTick, LiveHello, LiveSnapshot } from '../../shared/api.ts';
+import type { CompactTick, LiveHello, LiveMeta, LiveSnapshot } from '../../shared/api.ts';
+import type { Redis } from '../db/redis.ts';
 import { HttpError } from '../http-error.ts';
 import type { LiveHub } from '../live/hub.ts';
+import { withTimeout } from '../timeout.ts';
 
 const KEEPALIVE_MS = 15_000;
 /** A client this far behind is dropped; EventSource reconnects and re-syncs. */
 const MAX_BUFFERED_BYTES = 1 << 20;
 
-export function liveRoutes(app: FastifyInstance, deps: { hub: LiveHub }) {
-  const { hub } = deps;
+/** A numeric hash field, or null when the collector has not written it. */
+const num = (v: string | undefined) => (v === undefined || v === '' || !Number.isFinite(Number(v)) ? null : Number(v));
+
+export function liveRoutes(app: FastifyInstance, deps: { hub: LiveHub; redis: Redis }) {
+  const { hub, redis } = deps;
 
   app.get<{ Querystring: { seconds?: string } }>('/api/live/series', async (req): Promise<CompactTick[]> => {
     const raw = req.query.seconds ?? '900';
@@ -23,6 +28,29 @@ export function liveRoutes(app: FastifyInstance, deps: { hub: LiveHub }) {
     const snap = hub.latest();
     if (!snap) throw new HttpError(503, 'no live data yet');
     return snap;
+  });
+
+  // Polled every 5 s by the health strip, so it is not request-logged.
+  app.get('/api/live/meta', { logLevel: 'warn' }, async (): Promise<LiveMeta> => {
+    if (!redis.isReady) throw new HttpError(503, 'Redis: not connected');
+    let meta: Record<string, string>, alive: number, ended: number;
+    try {
+      [meta, alive, ended] = await withTimeout(
+        Promise.all([redis.hGetAll('netwatch:meta'), redis.sCard('netwatch:alive'), redis.zCard('netwatch:ended')]),
+        2000,
+        'redis meta',
+      );
+    } catch (err) {
+      throw new HttpError(503, `Redis: ${(err as Error).message}`);
+    }
+    return {
+      serverTimeMs: Date.now(),
+      lastTickMs: num(meta.last_tick_ms),
+      intervalMs: num(meta.interval_ms),
+      drops: num(meta.drops),
+      alive,
+      ended,
+    };
   });
 
   // One SSE stream per browser tab, all fed by the hub's single stream reader.

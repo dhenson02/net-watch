@@ -93,6 +93,21 @@ export interface CompactTick {
   gap?: true;
 }
 
+/** `netwatch:meta` plus the process set sizes, for the health strip. */
+export interface LiveMeta {
+  /** The API server's clock when it answered, to correct for browser clock skew. */
+  serverTimeMs: number;
+  /** Null until the collector has written its first tick. */
+  lastTickMs: number | null;
+  intervalMs: number | null;
+  /** Cumulative dropped events since the collector started; resets on restart. */
+  drops: number | null;
+  /** `SCARD netwatch:alive` */
+  alive: number;
+  /** `ZCARD netwatch:ended` (kept for `--ended-ttl-secs`) */
+  ended: number;
+}
+
 /** First SSE event on every (re)connect of /api/live/events. */
 export interface LiveHello {
   latestTs: number | null;
@@ -116,6 +131,16 @@ export interface HistorySummary {
   rxBytes: number;
   /** Distinct process instances with traffic in the range. */
   processes: number;
+}
+
+/** Whether the collector's ClickHouse sink is keeping up. */
+export interface HistoryIngest {
+  /** The API server's clock when it answered. */
+  serverTimeMs: number;
+  /** Newest `flows.ts`, or null when there is no row in the last 10 min. */
+  lastTsMs: number | null;
+  /** `flows` rows with `ts` in the last minute. */
+  rows1m: number;
 }
 
 /** A process instance from the `processes` table. */

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import type { CompactTick } from '../../shared/api.ts';
 import { EChart, useEChartRef } from '../charts/EChart.tsx';
 import type { EChartsCoreOption, EChartsType } from '../charts/echarts.ts';
@@ -7,6 +7,8 @@ import { RX, TX } from '../charts/palette.ts';
 import { useColorScheme } from '../charts/useColorScheme.ts';
 import { Panel } from '../components/Panel.tsx';
 import { useLive, type LiveStatus } from '../hooks/useLive.ts';
+import { useNow } from '../hooks/useNow.ts';
+import { HealthStrip } from '../live/HealthStrip.tsx';
 import { Link } from '../router.ts';
 
 const WINDOW_S = 900;
@@ -26,15 +28,6 @@ function totals(ticks: CompactTick[]): { tx: Point[]; rx: Point[] } {
     rx.push([t.ts, -t.rxKbps]);
   }
   return { tx, rx };
-}
-
-function useNow(ms: number): number {
-  const [now, setNow] = useState(Date.now);
-  useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), ms);
-    return () => clearInterval(id);
-  }, [ms]);
-  return now;
 }
 
 const STATUS_TEXT: Record<LiveStatus, string> = { connecting: 'connecting…', live: 'connected', reconnecting: 'reconnecting…' };
@@ -77,6 +70,7 @@ export function LivePage() {
   return (
     <>
       <h1>Live</h1>
+      <HealthStrip />
       <div className="panels">
         <Panel
           title="Throughput"

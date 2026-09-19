@@ -64,7 +64,9 @@ the background, and `/api/health` reports the state of each backend.
 | `GET /api/live/series?seconds=900` | `CompactTick[]` from the hub's ring buffer, oldest first (`seconds` 1..86400) |
 | `GET /api/live/events` | SSE: `hello` `{latestTs}` on connect, then one `tick` (a `CompactTick`) per collector tick, `:keepalive` every 15 s |
 | `GET /api/live/snapshot` | the latest full snapshot (`LiveSnapshot`) from memory; 503 until the first tick |
+| `GET /api/live/meta` | `netwatch:meta` (last tick, interval, drops) plus the sizes of `netwatch:alive` and `netwatch:ended`; 503 while Redis is down |
 | `GET /api/history/summary?from&to` | payload bytes and process count over a range |
+| `GET /api/history/ingest` | newest `flows.ts` and the row count of the last minute, to show whether the collector's ClickHouse sink keeps up |
 | `GET /api/process/:pid/:start` | one process instance from `processes`; 404 if unknown |
 
 Errors are `{ "error": "…" }` with a 4xx/5xx status; ClickHouse failures are
@@ -94,8 +96,9 @@ src/client/    React SPA (Vite root)
   router.ts    usePath / navigate / useSearchParam / Link; all page state is in the URL
   pages/       Live, History, Process
   charts/      ECharts registration, <EChart>, palette, formatters, themes
-  components/  Panel, RangePicker, SegmentedControl, Toggle, StatusPill
-  hooks/       useQuery (fetch + abort + stale-while-revalidate), useLive, useTimeRange
+  live/        Live page sections (HealthStrip)
+  components/  Panel, StatTile, Sparkline (inline SVG), RangePicker, SegmentedControl, Toggle, StatusPill
+  hooks/       useQuery (fetch + abort + stale-while-revalidate), usePoll, useLive, useNow, useTimeRange
 src/shared/    API response types, imported by both sides
 ```
 
