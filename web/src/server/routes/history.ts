@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
-import type { HistoryFlowsResponse, HistoryIngest, HistorySummary, ThroughputResponse } from '../../shared/api.ts';
+import type { HistoryFlowsResponse, HistoryIngest, HistorySummary, LifecycleResponse, ThroughputResponse } from '../../shared/api.ts';
+import { LIFECYCLE_LIMIT_DEFAULT, LIFECYCLE_LIMIT_MAX, lifecycleQuery, parseNames, toLifecycleProc, type LifecycleRow } from '../ch/lifecycle.ts';
 import { chQuery, clientGone } from '../ch/query.ts';
 import { parseRange, rangeInfo, rangeParams, timeFilter } from '../ch/range.ts';
 import { DISPLAY_IP, filterSql, flowSource, parseBy, parseFilters, UNKNOWN_UID } from '../ch/sql.ts';
@@ -109,6 +110,21 @@ export function historyRoutes(app: FastifyInstance, deps: { clickhouse: ClickHou
       }
     }
     return buildThroughput(rows, r, dir, labels);
+  });
+
+  /**
+   * Process start/end markers (12): instances whose first network I/O or end
+   * lies in the range, largest lifetime total first. Optional `names`
+   * (comma-separated) and `uid` narrow it; `limit` 1..1000 (default 200).
+   */
+  app.get<RangeQuery>('/api/history/lifecycle', async (req, reply): Promise<LifecycleResponse> => {
+    const { from, to } = parseRange(req.query);
+    const limit = intInRange(req.query.limit, 'limit', LIFECYCLE_LIMIT_DEFAULT, 1, LIFECYCLE_LIMIT_MAX);
+    const names = parseNames(req.query.names);
+    const { uid } = parseFilters({ uid: req.query.uid });
+    const { sql, params } = lifecycleQuery({ from, to, limit: limit + 1, names, uid });
+    const rows = await chQuery<LifecycleRow>(ch, req.log, sql, params, clientGone(reply));
+    return { from, to, procs: rows.slice(0, limit).map(toLifecycleProc), truncated: rows.length > limit };
   });
 
   /**

@@ -11,6 +11,7 @@ import type {
   HistoryFlowsResponse,
   HistoryIngest,
   HistorySummary,
+  LifecycleResponse,
   LiveFlowsResponse,
   LiveMeta,
   LiveSnapshotResponse,
@@ -214,6 +215,47 @@ test('history throughput: padded kbps per top key, both tables, filters, drill k
 
   for (const q of ['by=raddr', 'by=toString(uid)', 'dir=up', 'top=4', 'top=21', 'uid=x', 'dest=host:1', `name=${'x'.repeat(300)}`]) {
     assert.equal((await get(`/api/history/throughput?${q}`)).status, 400, q);
+  }
+});
+
+test('history lifecycle: processes whose first I/O or end is in range, largest first, filters', async () => {
+  const now = Date.now();
+  const range = `from=${now - 7 * 86_400_000}&to=${now}`;
+  const all = await get<LifecycleResponse>(`/api/history/lifecycle?${range}`);
+  assert.equal(all.status, 200);
+  assert.equal(typeof all.body.truncated, 'boolean');
+  assert.ok(all.body.procs.length <= 200);
+  const inRange = (t: number | null) => t !== null && t >= all.body.from && t < all.body.to;
+  for (const p of all.body.procs) {
+    assert.match(p.id, /^\d+:\d+$/);
+    assert.equal(p.id.split(':')[0], String(p.pid));
+    assert.equal(typeof p.name, 'string');
+    assert.ok(p.cmdline.length <= 120);
+    assert.ok(Number.isFinite(p.bytes) && p.bytes >= 0);
+    assert.ok(inRange(p.firstSeenMs) || inRange(p.endedMs), p.id);
+  }
+  for (let i = 1; i < all.body.procs.length; i++) assert.ok(all.body.procs[i - 1]!.bytes >= all.body.procs[i]!.bytes, 'largest first');
+
+  const first = all.body.procs[0];
+  if (first) {
+    // The id opens the process page.
+    const [pid, start] = first.id.split(':');
+    assert.equal((await get(`/api/process/${pid}/${start}`)).status, 200);
+    const named = await get<LifecycleResponse>(`/api/history/lifecycle?${range}&names=${encodeURIComponent(first.name)},no-such-proc`);
+    assert.equal(named.status, 200);
+    assert.ok(named.body.procs.length > 0);
+    for (const p of named.body.procs) assert.equal(p.name, first.name);
+    const one = await get<LifecycleResponse>(`/api/history/lifecycle?${range}&limit=1`);
+    assert.equal(one.body.procs.length, 1);
+    assert.equal(one.body.truncated, all.body.procs.length > 1);
+  }
+  const none = await get<LifecycleResponse>(`/api/history/lifecycle?${range}&names=no-such-proc`);
+  assert.deepEqual(none.body.procs, []);
+  const empty = await get<LifecycleResponse>(`/api/history/lifecycle?from=1000&to=2000`);
+  assert.deepEqual(empty.body.procs, []);
+
+  for (const q of ['limit=0', 'limit=1001', 'uid=x', `names=${Array.from({ length: 51 }, (_, i) => i).join(',')}`, 'from=5&to=4']) {
+    assert.equal((await get(`/api/history/lifecycle?${q}`)).status, 400, q);
   }
 });
 

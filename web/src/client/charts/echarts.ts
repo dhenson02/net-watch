@@ -2,7 +2,7 @@
 // never from 'echarts' itself, so the bundle only carries what is listed.
 // A chart that needs another series type or component adds it below.
 import * as echarts from 'echarts/core';
-import { BarChart, LineChart, SankeyChart } from 'echarts/charts';
+import { BarChart, LineChart, SankeyChart, ScatterChart } from 'echarts/charts';
 import {
   AriaComponent,
   BrushComponent,
@@ -21,6 +21,8 @@ echarts.use([
   LineChart,
   BarChart,
   SankeyChart,
+  // History's process start/end marker track (12).
+  ScatterChart,
   AriaComponent,
   BrushComponent,
   DataZoomComponent,

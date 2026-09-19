@@ -69,6 +69,7 @@ the background, and `/api/health` reports the state of each backend.
 | `GET /api/history/summary?from&to&<filters>` | payload bytes and process count over a range |
 | `GET /api/history/flows?from&to&limit=300&<filters>` | bytes per (process name, proto, app, ip, port) over a range, largest first, `limit` 1..2000 (`truncated` says whether more matched). Raw `flows` up to 2 h, else `flows_1m` from the minute `from` falls in. Each row's `id` is the busiest instance of the name, for click-through |
 | `GET /api/history/throughput?from&to&step&by=app&dir=both&top=8&<filters>` | kbps per bucket stacked by `by` (`app`, `name`, `proto`, `uid`, `dest`): the top `top` (5..20) keys over the whole range, ranked by `dir` (`both`/`total`: tx + rx, `tx`, `rx`), plus `__other` (`ThroughputResponse`, column-oriented, every key zero-padded to every bucket). `from` is rounded down to a bucket start; a bucket cut short by `to` is divided by the time it covers. `labels` names uids (`jay (1000)`) |
+| `GET /api/history/lifecycle?from&to&names=a,b&uid&limit=200` | process instances whose first network I/O (`first_seen`, not the exec time) or end falls in the range, largest lifetime total (tx + rx) first, `limit` 1..1000 (`LifecycleResponse`: `id`, pid, name, the first 120 chars of the cmdline, `firstSeenMs`, `endedMs`, `bytes`; `truncated` says whether more matched). `names` (comma-separated, at most 50) and `uid` narrow it; the History page's start/end marker track |
 | `GET /api/history/ingest` | newest `flows.ts` and the row count of the last minute, to show whether the collector's ClickHouse sink keeps up |
 | `GET /api/process/:pid/:start` | one process instance from `processes`; 404 if unknown |
 
@@ -99,7 +100,8 @@ src/server/    Fastify API + static hosting of dist/client (SPA fallback)
   db/          Redis and ClickHouse clients and their health probes
   live/        LiveHub (stream reader, ring buffer, SSE fan-out), snapshot compaction
   ch/          chQuery, parseRange, SQL fragments (DISPLAY_IP, BY_COLUMNS, filters, flowSource), the throughput
-               query and its padding/rate conversion (throughput.ts), timezone check
+               query and its padding/rate conversion (throughput.ts), the process lifecycle query
+               (lifecycle.ts), timezone check
   routes/      one module per API area (health, live, history, process)
   users.ts     uid → username from /etc/passwd (read at startup, refreshed hourly)
 src/client/    React SPA (Vite root)
@@ -109,7 +111,8 @@ src/client/    React SPA (Vite root)
                FlowSankey (Live + History panels) and its pure graph builder buildSankey,
                mirroredStack (the stacked tx/rx area chart option shared by Live and History throughput)
   history/     History page sections: ThroughputChart (05), useThroughput (URL state + query) and its pure
-               series/drill-down logic throughputSeries.ts
+               series/drill-down logic throughputSeries.ts; LifecycleTrack (12, process start/end markers
+               under the throughput chart) and its pure event/clustering logic clusterMarkers.ts
   live/        Live page sections (HealthStrip, LiveThroughput + its pure series builder useLiveThroughput,
                TopTalkers + its pure row logic topTalkers.ts, useSnapshot)
   components/  Panel, StatTile, Sparkline (inline SVG), RangePicker, SegmentedControl, Toggle, StatusPill
@@ -117,7 +120,7 @@ src/client/    React SPA (Vite root)
 src/shared/    API response types, imported by both sides
 ```
 
-Routes: `/` → `/live` (`?live_win=5m|15m|max&live_by=name|id&sort=[-]key&q=filter&idle=show&flow_dir=tx|rx`), `/history?from&to&by=app|name|proto|uid|dest&dir=both|tx|rx|total&top=5..20&filter.name|app|proto|uid|dest=…&flow_dir=tx|rx` (default range: the last 24 h; the `filter.*` params apply to the totals, the throughput chart and the flow diagram), `/process/:pid/:start`.
+Routes: `/` → `/live` (`?live_win=5m|15m|max&live_by=name|id&sort=[-]key&q=filter&idle=show&flow_dir=tx|rx`), `/history?from&to&by=app|name|proto|uid|dest&dir=both|tx|rx|total&top=5..20&filter.name|app|proto|uid|dest=…&flow_dir=tx|rx&events=starts|all` (default range: the last 24 h; the `filter.*` params apply to the totals, the throughput chart and the flow diagram; `events` shows process start, or start and end, markers under the throughput chart, off by default), `/process/:pid/:start`.
 
 Conventions:
 

@@ -765,6 +765,31 @@ input:focus-visible {
   white-space: nowrap;
 }
 
+/* Process start/end marker track under the History throughput (12) */
+.lifecycle-track {
+  margin-top: -4px;
+}
+
+.lifecycle-note {
+  margin: 2px 0 0;
+  padding-left: 64px;
+  font-size: 11px;
+}
+
+.tip-cmd {
+  max-width: 320px;
+  padding-left: 14px;
+  overflow: hidden;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tip-foot {
+  margin-top: 4px;
+  font-size: 11px;
+}
+
 /* Top-talkers table (02) */
 
 .sr-only {

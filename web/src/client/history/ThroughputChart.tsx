@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, type ReactNode } from 'react';
-import type { ThroughputBy, ThroughputDir } from '../../shared/api.ts';
+import { useEffect, useMemo, useRef, type ReactNode, type RefObject } from 'react';
+import { THROUGHPUT_OTHER, type ThroughputBy, type ThroughputDir } from '../../shared/api.ts';
 import type { TimeRange } from '../api.ts';
 import { EChart, useEChartRef } from '../charts/EChart.tsx';
 import type { EChartsCoreOption, EChartsType } from '../charts/echarts.ts';
@@ -60,6 +60,13 @@ type Props = {
   overlays?: readonly object[];
   /** Extra header controls, e.g. overlay toggles. */
   actions?: ReactNode;
+  /** Receives the chart instance, e.g. for a hover marker from a track below (12). */
+  chartRef?: RefObject<EChartsType | null>;
+  /**
+   * Rendered under the plot inside the panel (12's lifecycle track). `topKeys`
+   * are the answer's keys without "other", null while it loads or is stale.
+   */
+  below?: (ctx: { topKeys: readonly string[] | null }) => ReactNode;
 };
 
 /**
@@ -69,12 +76,13 @@ type Props = {
  * double-clicking a legend item filters to it and drills into the next
  * dimension.
  */
-export function ThroughputChart({ range, slots, overlays, actions }: Props) {
+export function ThroughputChart({ range, slots, overlays, actions, chartRef, below }: Props) {
   const p = useThroughputParams();
   const ownSlots = useSlots();
   const q = useThroughput(range, p, slots, ownSlots);
   const scheme = useColorScheme();
-  const chart = useEChartRef();
+  const ownChart = useEChartRef();
+  const chart = chartRef ?? ownChart;
   const d = q.data;
 
   const series = useMemo<HistorySeries | null>(() => {
@@ -194,6 +202,7 @@ export function ThroughputChart({ range, slots, overlays, actions }: Props) {
   const noun = BY_NOUN[p.by];
   const source = d ? `${fmtDuration(d.step * 1000)} buckets from ${d.table === 'flows' ? 'raw flows' : 'the per-minute rollup'}` : '';
   const empty = d && !q.stale && !d.keys.length ? 'No traffic in this range.' : undefined;
+  const topKeys = useMemo(() => (d && !q.stale ? d.keys.filter((k) => k !== THROUGHPUT_OTHER) : null), [d, q.stale]);
 
   return (
     <Panel
@@ -232,6 +241,7 @@ export function ThroughputChart({ range, slots, overlays, actions }: Props) {
           ariaLabel={`Throughput by ${noun}, ${p.dir === 'both' ? 'sent stacked above zero and received below' : 'stacked'}`}
         />
       </div>
+      {below?.({ topKeys })}
     </Panel>
   );
 }

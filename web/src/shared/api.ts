@@ -261,3 +261,34 @@ export interface ThroughputResponse {
   tx: Record<string, number[]>;
   rx: Record<string, number[]>;
 }
+
+// ---------------------------------------------------------------------------
+// Process start/end markers (12): a track under the History throughput
+
+/** A process instance that started talking or ended inside a range. */
+export interface LifecycleProc {
+  /** `pid:start_ns`, for the process page. */
+  id: string;
+  pid: number;
+  name: string;
+  /** The start of the command line (at most 120 chars). */
+  cmdline: string;
+  /** First network I/O (not the exec time), ms. */
+  firstSeenMs: number;
+  endedMs: number | null;
+  /** tx + rx over the whole lifetime. */
+  bytes: number;
+}
+
+/**
+ * `/api/history/lifecycle`: processes whose first network I/O or end falls in
+ * the range, largest first. The other event may lie outside the range; the
+ * client draws only the ones inside.
+ */
+export interface LifecycleResponse {
+  from: number;
+  to: number;
+  procs: LifecycleProc[];
+  /** More processes matched than `limit`; the smallest were left out. */
+  truncated: boolean;
+}

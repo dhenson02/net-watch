@@ -34,6 +34,9 @@ export const urls = {
   // flows get 1 s buckets at a few minutes, not the 10 s default.
   historyThroughput: (r: TimeRange, p: { by: string; dir: string; top: number; filters: UrlFilters }) =>
     `/api/history/throughput?${qs({ from: r.from, to: r.to, step: Math.max(1, Math.ceil((r.to - r.from) / 1000 / 1500)), by: p.by, dir: p.dir, top: p.top, ...p.filters })}`,
+  // `names` is comma-separated; omitted means the largest processes of any name.
+  historyLifecycle: (r: TimeRange, p: { names?: readonly string[]; uid?: string; limit?: number } = {}) =>
+    `/api/history/lifecycle?${qs({ from: r.from, to: r.to, names: p.names?.length ? p.names.join(',') : undefined, uid: p.uid, limit: p.limit })}`,
 };
 
 export type { HistorySummary, ProcessInfo };
