@@ -2,12 +2,14 @@ import { useMemo } from 'react';
 import type { NewDestsResponse } from '../../shared/api.ts';
 import { urls, type TimeRange } from '../api.ts';
 import { cssVar } from '../charts/cssVar.ts';
-import { EChart } from '../charts/EChart.tsx';
+import { ChartLegend, type LegendItem } from '../charts/ChartLegend.tsx';
+import { EChart, useEChartRef } from '../charts/EChart.tsx';
 import type { EChartsCoreOption } from '../charts/echarts.ts';
 import { fmtTime } from '../charts/format.ts';
 import { tipRow } from '../charts/mirroredStack.ts';
 import { OTHER, slotColor, type SlotAssigner } from '../charts/palette.ts';
 import { useColorScheme } from '../charts/useColorScheme.ts';
+import { ChartLayout } from '../components/ChartLayout.tsx';
 import { Panel } from '../components/Panel.tsx';
 import { useQuery } from '../hooks/useQuery.ts';
 import { setSearchParams } from '../router.ts';
@@ -56,8 +58,8 @@ export function NewDestDaily({ range, name, opts, slots }: Props) {
     const label = (n: string) => (n === OTHER_NAME ? 'other' : n);
     return {
       animation: false,
-      grid: { left: 48, right: 16, top: 32, bottom: 28 },
-      legend: { top: 0, left: 0, type: 'scroll', data: series.map((s) => label(s.name)) },
+      grid: { left: 48, right: 16, top: 12, bottom: 28 },
+      legend: { show: false, data: series.map((s) => label(s.name)) },
       xAxis: {
         type: 'category',
         data: counts?.days ?? [],
@@ -95,6 +97,12 @@ export function NewDestDaily({ range, name, opts, slots }: Props) {
     };
   }, [counts, colors, scheme]);
 
+  const chart = useEChartRef();
+  const legendItems = useMemo<LegendItem[]>(
+    () => (counts?.series ?? []).map((s) => ({ name: s.name === OTHER_NAME ? 'other' : s.name, color: s.name === OTHER_NAME ? OTHER[scheme] : slotColor(colors.get(s.name) ?? -1, scheme) })),
+    [counts, colors, scheme],
+  );
+
   const onEvents = useMemo(
     () => ({
       click: (p: { dataIndex?: number }) => {
@@ -123,14 +131,24 @@ export function NewDestDaily({ range, name, opts, slots }: Props) {
     <Panel
       title="New destinations per day"
       subtitle={`First contacts of a program with an address it never used before, per day, stacked by program${name ? ` (${name} only)` : ''}. A spike after an update is normal; one without an update is not. Click a day to see it on the throughput chart`}
-      actions={<NewDestToggles opts={opts} />}
       footnote={foot}
       loading={q.loading}
       error={q.error}
       empty={d && !q.stale && total === 0 ? `No new destinations in this window.${hiddenText(d) ? ` ${hiddenText(d)}.` : ''}` : undefined}
       wide
     >
-      {total > 0 && <EChart option={option} onEvents={onEvents} height={220} ariaLabel={`New destinations per day: ${total} in all`} />}
+      {total > 0 && (
+        <ChartLayout
+          side={
+            <>
+              <NewDestToggles opts={opts} />
+              <ChartLegend chart={chart} items={legendItems} title="Programs" />
+            </>
+          }
+        >
+          <EChart option={option} onEvents={onEvents} chartRef={chart} height={220} ariaLabel={`New destinations per day: ${total} in all`} />
+        </ChartLayout>
+      )}
     </Panel>
   );
 }

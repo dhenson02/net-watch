@@ -8,6 +8,7 @@ import { fmtBytes, fmtDuration, fmtTime } from '../charts/format.ts';
 import { tipRow } from '../charts/mirroredStack.ts';
 import { CATEGORICAL } from '../charts/palette.ts';
 import { useColorScheme } from '../charts/useColorScheme.ts';
+import { ChartLayout } from '../components/ChartLayout.tsx';
 import { Panel } from '../components/Panel.tsx';
 import { SegmentedControl } from '../components/SegmentedControl.tsx';
 import { useQuery } from '../hooks/useQuery.ts';
@@ -257,7 +258,6 @@ export function ProcessBeacons({ p }: { p: ProcessInfo }) {
             {d && periodic > 0 ? `; ${periodic} periodic` : ''}. Click a row for its History
           </>
         }
-        actions={control}
         footnote={
           focusIp ? (
             <>
@@ -277,7 +277,11 @@ export function ProcessBeacons({ p }: { p: ProcessInfo }) {
         error={q.error}
         empty={d && !q.stale && d.dests.length === 0 ? `No traffic recorded ${scope === 'name' ? `for ${p.name}` : 'for this instance'} in this window.` : undefined}
       >
-        {d && d.dests.length > 0 && <StripChart d={d} range={shown} focus={focus} />}
+        {d && d.dests.length > 0 && (
+          <ChartLayout side={control}>
+            <StripChart d={d} range={shown} focus={focus} />
+          </ChartLayout>
+        )}
       </Panel>
       {d && d.dests.length > 0 && <PeriodicTable dests={d.dests} range={shown} />}
     </>

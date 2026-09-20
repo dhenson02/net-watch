@@ -7,6 +7,7 @@ import type { EChartsCoreOption } from '../charts/echarts.ts';
 import { browserTz, fmtBytes, fmtRate, fmtTime } from '../charts/format.ts';
 import { SEQUENTIAL, type Scheme } from '../charts/palette.ts';
 import { useColorScheme } from '../charts/useColorScheme.ts';
+import { ChartLayout } from '../components/ChartLayout.tsx';
 import { Panel } from '../components/Panel.tsx';
 import { SegmentedControl } from '../components/SegmentedControl.tsx';
 import { useQuery } from '../hooks/useQuery.ts';
@@ -112,44 +113,47 @@ export function ActivityHeatmap({ filters }: Props) {
       loading={q.loading}
       error={q.error}
       empty={d && !q.stale && !d.grids.length ? 'No traffic in this window.' : undefined}
-      actions={
-        <>
-          <SegmentedControl<HeatmapMetric>
-            label="Bytes"
-            options={METRIC_OPTIONS}
-            value={metric}
-            onChange={(v) => setSearchParams({ [METRIC_PARAM]: v === 'total' ? null : v })}
-          />
-          <SegmentedControl<HeatmapSplit>
-            label="Split"
-            options={SPLIT_OPTIONS}
-            value={split}
-            onChange={(v) => setSearchParams({ [SPLIT_PARAM]: v === 'none' ? null : v })}
-          />
-          <SegmentedControl<HeatWeeks>
-            label="Window"
-            options={WEEKS_OPTIONS}
-            value={weeks}
-            onChange={(v) => setSearchParams({ [WEEKS_PARAM]: v === '4' ? null : v })}
-          />
-        </>
-      }
     >
       {notes.length > 0 && <p className="ctl-note heatmap-note">{notes.join(' · ')}</p>}
-      {d && (d.split === 'app' ? (
-        <div className="heatmap-multiples">
-          {grids.map((g) => (
-            <figure className="heatmap-multiple" key={g.key ?? ''}>
-              <figcaption>
-                <span className="heatmap-key">{g.key}</span> <span className="muted">{fmtBytes(g.bytes)}</span>
-              </figcaption>
-              <HeatGrid grid={g} samples={d.samples} scheme={scheme} compact onEvents={onEvents} />
-            </figure>
-          ))}
-        </div>
-      ) : (
-        grids[0] && <HeatGrid grid={grids[0]} samples={d.samples} scheme={scheme} onEvents={onEvents} />
-      ))}
+      <ChartLayout
+        side={
+          <>
+            <SegmentedControl<HeatmapMetric>
+              label="Bytes"
+              options={METRIC_OPTIONS}
+              value={metric}
+              onChange={(v) => setSearchParams({ [METRIC_PARAM]: v === 'total' ? null : v })}
+            />
+            <SegmentedControl<HeatmapSplit>
+              label="Split"
+              options={SPLIT_OPTIONS}
+              value={split}
+              onChange={(v) => setSearchParams({ [SPLIT_PARAM]: v === 'none' ? null : v })}
+            />
+            <SegmentedControl<HeatWeeks>
+              label="Window"
+              options={WEEKS_OPTIONS}
+              value={weeks}
+              onChange={(v) => setSearchParams({ [WEEKS_PARAM]: v === '4' ? null : v })}
+            />
+          </>
+        }
+      >
+        {d && (d.split === 'app' ? (
+          <div className="heatmap-multiples">
+            {grids.map((g) => (
+              <figure className="heatmap-multiple" key={g.key ?? ''}>
+                <figcaption>
+                  <span className="heatmap-key">{g.key}</span> <span className="muted">{fmtBytes(g.bytes)}</span>
+                </figcaption>
+                <HeatGrid grid={g} samples={d.samples} scheme={scheme} compact onEvents={onEvents} />
+              </figure>
+            ))}
+          </div>
+        ) : (
+          grids[0] && <HeatGrid grid={grids[0]} samples={d.samples} scheme={scheme} onEvents={onEvents} />
+        ))}
+      </ChartLayout>
     </Panel>
   );
 }

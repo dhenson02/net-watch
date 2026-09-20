@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CompactTick } from '../../shared/api.ts';
+import { ChartLegend, type LegendItem } from '../charts/ChartLegend.tsx';
 import { EChart, useEChartRef } from '../charts/EChart.tsx';
 import type { EChartsCoreOption, EChartsType } from '../charts/echarts.ts';
 import { fmtTime } from '../charts/format.ts';
@@ -7,6 +8,7 @@ import { cssVar } from '../charts/cssVar.ts';
 import { bandSeries, mirroredStackOption, stackTooltip, totalSeries } from '../charts/mirroredStack.ts';
 import { slotColor, type Scheme, type SlotAssigner } from '../charts/palette.ts';
 import { useColorScheme } from '../charts/useColorScheme.ts';
+import { ChartLayout } from '../components/ChartLayout.tsx';
 import { Panel } from '../components/Panel.tsx';
 import { SegmentedControl } from '../components/SegmentedControl.tsx';
 import { useLive } from '../hooks/useLive.ts';
@@ -151,6 +153,9 @@ export function LiveThroughput({ slots }: { slots: SlotAssigner }) {
   };
   useEffect(() => push(chart.current), [data, xMin, end, structure, chart]);
 
+  // Only when the band set or colors change; not on every tick's data.
+  const legendItems = useMemo<LegendItem[]>(() => latest.current.data.bands.map((b) => ({ name: b.label, color: color(b, scheme) })), [structure]);
+
   const last = live.ticks.at(-1);
   const stale = last !== undefined && now - last.ts > 3 * last.intervalMs;
 
@@ -162,39 +167,43 @@ export function LiveThroughput({ slots }: { slots: SlotAssigner }) {
       loading={live.status !== 'live' && !live.ticks.length}
       error={live.error}
       empty={live.status === 'live' && !live.ticks.length ? 'No ticks yet. Is the collector running?' : undefined}
-      actions={
-        <>
-          <SegmentedControl label="Group series" options={GROUP_OPTIONS} value={by} onChange={(v) => setBy(v, { replace: true })} />
-          <SegmentedControl label="Window" options={WINDOW_OPTIONS} value={win} onChange={(v) => setWin(v, { replace: true })} />
-          <button
-            type="button"
-            className={`btn${pausedAt !== null ? ' active' : ''}`}
-            aria-pressed={pausedAt !== null}
-            onClick={() => setPausedAt(pausedAt === null ? (live.latestTs ?? null) : null)}
-            disabled={pausedAt === null && live.latestTs === null}
-            title={pausedAt === null ? 'Freeze the chart; ticks keep buffering' : 'Resume live updates'}
-          >
-            {pausedAt === null ? '❚❚ pause' : '▶ resume'}
-          </button>
-        </>
-      }
     >
-      <div className="chart-wrap">
-        <EChart
-          option={option}
-          chartRef={chart}
-          onInit={onInit}
-          group="live"
-          height={320}
-          ariaLabel="Throughput by process, sent stacked above zero and received below"
-        />
-        {stale && (
-          <div className="chart-overlay" role="status">
-            stale since {fmtTime(last.ts, 'time')}
-          </div>
-        )}
-        {pausedAt !== null && !stale && <div className="chart-overlay chart-overlay-quiet">paused at {fmtTime(pausedAt, 'time')}</div>}
-      </div>
+      <ChartLayout
+        side={
+          <>
+            <SegmentedControl label="Group series" options={GROUP_OPTIONS} value={by} onChange={(v) => setBy(v, { replace: true })} />
+            <SegmentedControl label="Window" options={WINDOW_OPTIONS} value={win} onChange={(v) => setWin(v, { replace: true })} />
+            <button
+              type="button"
+              className={`btn${pausedAt !== null ? ' active' : ''}`}
+              aria-pressed={pausedAt !== null}
+              onClick={() => setPausedAt(pausedAt === null ? (live.latestTs ?? null) : null)}
+              disabled={pausedAt === null && live.latestTs === null}
+              title={pausedAt === null ? 'Freeze the chart; ticks keep buffering' : 'Resume live updates'}
+            >
+              {pausedAt === null ? '❚❚ pause' : '▶ resume'}
+            </button>
+            <ChartLegend chart={chart} items={legendItems} title={by === 'name' ? 'Process names' : 'Process instances'} />
+          </>
+        }
+      >
+        <div className="chart-wrap">
+          <EChart
+            option={option}
+            chartRef={chart}
+            onInit={onInit}
+            group="live"
+            height={320}
+            ariaLabel="Throughput by process, sent stacked above zero and received below"
+          />
+          {stale && (
+            <div className="chart-overlay" role="status">
+              stale since {fmtTime(last.ts, 'time')}
+            </div>
+          )}
+          {pausedAt !== null && !stale && <div className="chart-overlay chart-overlay-quiet">paused at {fmtTime(pausedAt, 'time')}</div>}
+        </div>
+      </ChartLayout>
     </Panel>
   );
 }

@@ -7,6 +7,7 @@ import type { EChartsCoreOption, EChartsType } from '../charts/echarts.ts';
 import { fmtBytes } from '../charts/format.ts';
 import { CATEGORICAL } from '../charts/palette.ts';
 import { useColorScheme } from '../charts/useColorScheme.ts';
+import { ChartLayout } from '../components/ChartLayout.tsx';
 import { Panel } from '../components/Panel.tsx';
 import { SegmentedControl } from '../components/SegmentedControl.tsx';
 import { useQuery } from '../hooks/useQuery.ts';
@@ -214,45 +215,48 @@ export function BandwidthTreemap({ range, filters }: Props) {
       loading={q.loading}
       error={q.error}
       empty={d && !q.stale && !d.users.length ? 'No traffic in this range.' : undefined}
-      actions={
-        <>
-          <SegmentedControl<TreemapDir>
-            label="Bytes"
-            options={DIR_OPTIONS}
-            value={dir}
-            onChange={(v) => setSearchParams({ [DIR_PARAM]: v === 'total' ? null : v })}
-          />
-          <SegmentedControl<TreemapView>
-            label="View"
-            options={VIEW_OPTIONS}
-            value={view}
-            onChange={(v) => setSearchParams({ [VIEW_PARAM]: v === 'treemap' ? null : v })}
-          />
-        </>
-      }
     >
-      <div
-        className="chart-wrap"
-        onClickCapture={(e) => {
-          if (view !== 'treemap') return;
-          if (overRoot.current) {
-            e.stopPropagation();
-            overRoot.current = false;
-            const parent = viewRoot(chartRef.current)?.parentNode;
-            if (parent) chartRef.current!.dispatchAction({ type: 'treemapRootToNode', seriesId: 'treemap', targetNode: parent });
-          } else if (overLeaf.current) e.stopPropagation();
-        }}
+      <ChartLayout
+        side={
+          <>
+            <SegmentedControl<TreemapDir>
+              label="Bytes"
+              options={DIR_OPTIONS}
+              value={dir}
+              onChange={(v) => setSearchParams({ [DIR_PARAM]: v === 'total' ? null : v })}
+            />
+            <SegmentedControl<TreemapView>
+              label="View"
+              options={VIEW_OPTIONS}
+              value={view}
+              onChange={(v) => setSearchParams({ [VIEW_PARAM]: v === 'treemap' ? null : v })}
+            />
+          </>
+        }
       >
-        <EChart
-          onEvents={events}
-          chartRef={chartRef}
-          // The two views are different series types: re-create rather than merge.
-          key={view}
-          option={option}
-          height={view === 'treemap' ? 440 : 480}
-          ariaLabel={`${DIR_NOUN[dir]} per user, process and app${largest ? `; largest user ${largest.name} with ${fmtBytes(largest.value)} of ${fmtBytes(d!.total)}` : ''}`}
-        />
-      </div>
+        <div
+          className="chart-wrap"
+          onClickCapture={(e) => {
+            if (view !== 'treemap') return;
+            if (overRoot.current) {
+              e.stopPropagation();
+              overRoot.current = false;
+              const parent = viewRoot(chartRef.current)?.parentNode;
+              if (parent) chartRef.current!.dispatchAction({ type: 'treemapRootToNode', seriesId: 'treemap', targetNode: parent });
+            } else if (overLeaf.current) e.stopPropagation();
+          }}
+        >
+          <EChart
+            onEvents={events}
+            chartRef={chartRef}
+            // The two views are different series types: re-create rather than merge.
+            key={view}
+            option={option}
+            height={view === 'treemap' ? 440 : 480}
+            ariaLabel={`${DIR_NOUN[dir]} per user, process and app${largest ? `; largest user ${largest.name} with ${fmtBytes(largest.value)} of ${fmtBytes(d!.total)}` : ''}`}
+          />
+        </div>
+      </ChartLayout>
     </Panel>
   );
 }

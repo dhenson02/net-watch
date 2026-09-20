@@ -2,11 +2,13 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ScatterBasis, ScatterGroup, ScatterPoint, ScatterResponse } from '../../shared/api.ts';
 import { urls, type TimeRange } from '../api.ts';
 import { cssVar } from '../charts/cssVar.ts';
+import { ChartLegend, type LegendItem } from '../charts/ChartLegend.tsx';
 import { EChart, useEChartRef } from '../charts/EChart.tsx';
 import type { EChartsCoreOption, EChartsType } from '../charts/echarts.ts';
 import { fmtBytes, fmtDuration, fmtTime } from '../charts/format.ts';
 import { OTHER, slotColor, type SlotAssigner } from '../charts/palette.ts';
 import { useColorScheme } from '../charts/useColorScheme.ts';
+import { ChartLayout } from '../components/ChartLayout.tsx';
 import { Panel } from '../components/Panel.tsx';
 import { SegmentedControl } from '../components/SegmentedControl.tsx';
 import { useQuery } from '../hooks/useQuery.ts';
@@ -153,8 +155,8 @@ export function TxRxScatter({ range, filters, slots }: Props) {
     const muted = cssVar('--muted');
     return {
       animation: false,
-      grid: { left: 72, right: 24, top: 36, bottom: 52 },
-      legend: { top: 0, left: 0, type: 'scroll' },
+      grid: { left: 72, right: 24, top: 16, bottom: 52 },
+      legend: { show: false },
       xAxis: { type: 'log' },
       yAxis: { type: 'log' },
       // tipAt reads the latest data through a ref.
@@ -222,6 +224,12 @@ export function TxRxScatter({ range, filters, slots }: Props) {
     </>
   );
 
+  const legendItems = useMemo<LegendItem[]>(() => {
+    const shown = new Set<string>((dynamic.legend as { data: string[] }).data);
+    return (dynamic.series as { type: string; name?: string; itemStyle?: { color: string } }[]).flatMap((s) =>
+      s.type === 'scatter' && s.name && shown.has(s.name) ? [{ name: s.name, color: s.itemStyle!.color }] : [],
+    );
+  }, [dynamic]);
   const rows = selected && points ? selected.slice(0, MAX_ROWS).map((i) => points[i]!) : null;
 
   return (
@@ -232,33 +240,37 @@ export function TxRxScatter({ range, filters, slots }: Props) {
       loading={q.loading}
       error={q.error}
       empty={d && !q.stale && !d.points.length ? 'No process traffic in this range.' : undefined}
-      actions={
-        <>
-          <SegmentedControl<ScatterGroup>
-            label="Point per"
-            options={GROUP_OPTIONS}
-            value={group}
-            onChange={(v) => setSearchParams({ [GROUP_PARAM]: v === 'instance' ? null : v })}
-          />
-          <SegmentedControl<ScatterBasis>
-            label="Totals"
-            options={BASIS_OPTIONS}
-            value={basis}
-            onChange={(v) => setSearchParams({ [BASIS_PARAM]: v === 'lifetime' ? null : v })}
-          />
-        </>
-      }
     >
-      <div className="chart-wrap">
-        <EChart
-          option={option}
-          onEvents={onEvents}
-          onInit={onInit}
-          chartRef={chart}
-          height={420}
-          ariaLabel={`Bytes sent against bytes received per ${group === 'name' ? 'process name' : 'process instance'}, log scales: ${points?.length ?? 0} points`}
-        />
-      </div>
+      <ChartLayout
+        side={
+          <>
+            <SegmentedControl<ScatterGroup>
+              label="Point per"
+              options={GROUP_OPTIONS}
+              value={group}
+              onChange={(v) => setSearchParams({ [GROUP_PARAM]: v === 'instance' ? null : v })}
+            />
+            <SegmentedControl<ScatterBasis>
+              label="Totals"
+              options={BASIS_OPTIONS}
+              value={basis}
+              onChange={(v) => setSearchParams({ [BASIS_PARAM]: v === 'lifetime' ? null : v })}
+            />
+            <ChartLegend chart={chart} items={legendItems} title={group === 'name' ? 'Process names' : 'Names (top 8)'} />
+          </>
+        }
+      >
+        <div className="chart-wrap">
+          <EChart
+            option={option}
+            onEvents={onEvents}
+            onInit={onInit}
+            chartRef={chart}
+            height={420}
+            ariaLabel={`Bytes sent against bytes received per ${group === 'name' ? 'process name' : 'process instance'}, log scales: ${points?.length ?? 0} points`}
+          />
+        </div>
+      </ChartLayout>
       {rows && (
         <div className="scatter-selection">
           <p className="scatter-selection-head">

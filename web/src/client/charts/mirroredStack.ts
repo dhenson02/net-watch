@@ -19,7 +19,7 @@ export type Point = [ts: number, kbps: number | null];
 
 export const STACK_LABEL: Record<Stack, string> = { tx: '↑ sent', rx: '↓ received', sum: '⇅ sent + received' };
 
-export const GRID = { top: 32, right: 16, bottom: 28, left: 64 };
+export const GRID = { top: 12, right: 16, bottom: 28, left: 88 };
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
@@ -146,7 +146,8 @@ export function mirroredStackOption({ stacks, muted, tooltip, grid: gridPatch, e
   return {
     animation: false,
     grid,
-    legend: { type: 'scroll', top: 0, left: 0, right: 0, icon: 'roundRect', itemWidth: 10, itemHeight: 10 },
+    // Drawn as a checkbox list in the side panel (ChartLegend); kept for selection state.
+    legend: { show: false },
     tooltip: { trigger: 'axis', axisPointer: { type: 'line' }, formatter: tooltip, confine: true },
     xAxis: { type: 'time', splitLine: { show: false } },
     yAxis: { type: 'value', axisLabel: { formatter: (v: number) => fmtRate(Math.abs(v)) } },

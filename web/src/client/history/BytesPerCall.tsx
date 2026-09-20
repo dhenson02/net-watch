@@ -2,12 +2,14 @@ import { useMemo, useState } from 'react';
 import type { BytesPerCallBy, BytesPerCallDir, BytesPerCallResponse, BytesPerCallRow, ProcessInfo } from '../../shared/api.ts';
 import { urls, type TimeRange } from '../api.ts';
 import { cssVar } from '../charts/cssVar.ts';
-import { EChart } from '../charts/EChart.tsx';
+import { EChart, useEChartRef } from '../charts/EChart.tsx';
 import type { EChartsCoreOption } from '../charts/echarts.ts';
 import { fmtBytes, PAYLOAD_NOTE } from '../charts/format.ts';
 import { tipRow } from '../charts/mirroredStack.ts';
 import { RX, SEQUENTIAL, TX } from '../charts/palette.ts';
 import { useColorScheme } from '../charts/useColorScheme.ts';
+import { ChartLayout } from '../components/ChartLayout.tsx';
+import { ChartLegend, type LegendItem } from '../charts/ChartLegend.tsx';
 import { Panel } from '../components/Panel.tsx';
 import { SegmentedControl } from '../components/SegmentedControl.tsx';
 import { useQuery } from '../hooks/useQuery.ts';
@@ -188,25 +190,28 @@ export function HistoryBytesPerCall({ range, filters }: { range: TimeRange; filt
       loading={q.loading}
       error={q.error}
       empty={d && !q.stale && !hasCalls(d) ? 'No calls in this range.' : undefined}
-      actions={
-        <>
-          <DirControl dir={dir} />
-          <SegmentedControl<BytesPerCallBy>
-            label="Rows"
-            options={BY_OPTIONS}
-            value={by}
-            onChange={(v) => setSearchParams({ [BPC_BY_PARAM]: v === 'app' ? null : v })}
-          />
-        </>
-      }
     >
-      {option && (
-        <EChart
-          option={option}
-          height={80 + rows.length * 28}
-          ariaLabel={`Share of calls by bytes per call${d ? `; overall ${medianText(d.total) ?? 'no calls'}` : ''}`}
-        />
-      )}
+      <ChartLayout
+        side={
+          <>
+            <DirControl dir={dir} />
+            <SegmentedControl<BytesPerCallBy>
+              label="Rows"
+              options={BY_OPTIONS}
+              value={by}
+              onChange={(v) => setSearchParams({ [BPC_BY_PARAM]: v === 'app' ? null : v })}
+            />
+          </>
+        }
+      >
+        {option && (
+          <EChart
+            option={option}
+            height={80 + rows.length * 28}
+            ariaLabel={`Share of calls by bytes per call${d ? `; overall ${medianText(d.total) ?? 'no calls'}` : ''}`}
+          />
+        )}
+      </ChartLayout>
     </Panel>
   );
 }
@@ -244,8 +249,8 @@ export function ProcessBytesPerCall({ p }: { p: ProcessInfo }) {
     };
     return {
       animation: false,
-      grid: { left: 48, right: 16, top: 36, bottom: 44 },
-      legend: { top: 0, left: 0, data: ['share of calls', 'share of bytes'], textStyle: { color: muted } },
+      grid: { left: 48, right: 16, top: 16, bottom: 44 },
+      legend: { show: false, data: ['share of calls', 'share of bytes'] },
       xAxis: {
         type: 'category',
         data: BUCKET_TICKS,
@@ -291,6 +296,15 @@ export function ProcessBytesPerCall({ p }: { p: ProcessInfo }) {
     };
   }, [d, dir, scheme]);
 
+  const chart = useEChartRef();
+  const legendItems = useMemo<LegendItem[]>(
+    () => [
+      { name: 'share of calls', color: dir === 'tx' ? TX[scheme] : RX[scheme] },
+      { name: 'share of bytes', color: cssVar('--muted') },
+    ],
+    // cssVar reads the current theme's colors.
+    [dir, scheme],
+  );
   const median = d ? medianText(d.total) : null;
   return (
     <Panel
@@ -301,9 +315,17 @@ export function ProcessBytesPerCall({ p }: { p: ProcessInfo }) {
       loading={q.loading}
       error={q.error}
       empty={d && !q.stale && !hasCalls(d) ? `No ${dir === 'tx' ? 'send' : 'receive'} calls recorded for this instance.` : undefined}
-      actions={<DirControl dir={dir} />}
     >
-      {option && <EChart option={option} height={300} ariaLabel={`Share of calls by bytes per call${median ? `; ${median}` : ''}`} />}
+      <ChartLayout
+        side={
+          <>
+            <DirControl dir={dir} />
+            <ChartLegend chart={chart} items={legendItems} title="Shown" />
+          </>
+        }
+      >
+        {option && <EChart option={option} chartRef={chart} height={300} ariaLabel={`Share of calls by bytes per call${median ? `; ${median}` : ''}`} />}
+      </ChartLayout>
     </Panel>
   );
 }

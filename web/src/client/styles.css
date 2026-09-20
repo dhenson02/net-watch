@@ -1645,3 +1645,101 @@ textarea,
 .tt-names label {
   font-family: var(--font-mono);
 }
+
+/* Chart panels: filters and legend in a left side panel, like Top talkers.
+   The chart sets the height; the side panel matches it and scrolls. */
+.chart-layout {
+  display: flex;
+  align-items: stretch;
+  gap: 16px;
+}
+
+.chart-side {
+  flex: 0 0 200px;
+  position: relative;
+  min-height: 160px;
+}
+
+.chart-side-inner {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.chart-side-inner > * {
+  flex: none;
+  max-width: 100%;
+}
+
+.chart-side .segmented {
+  flex-wrap: wrap;
+}
+
+.chart-side .ctl-group {
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.chart-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.seg-caption {
+  display: none;
+}
+
+.chart-side .seg-caption {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+
+.chart-legend ul {
+  max-height: none;
+  overflow: visible;
+}
+
+.legend-swatch {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+@media (max-width: 800px) {
+  .chart-layout {
+    flex-direction: column;
+  }
+
+  .chart-side {
+    flex-basis: auto;
+    min-height: 0;
+  }
+
+  .chart-side-inner {
+    position: static;
+    max-height: 260px;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+}
+
+.seg-group {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  max-width: 100%;
+}
+
+/* The segmented control's own caption replaces the inline "compare" / "lanes by" labels. */
+.chart-side .ctl-group > .ctl-label {
+  display: none;
+}

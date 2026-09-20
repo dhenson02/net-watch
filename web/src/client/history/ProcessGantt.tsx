@@ -7,6 +7,7 @@ import type { EChartsCoreOption, EChartsType } from '../charts/echarts.ts';
 import { fmtBytes, fmtDuration, fmtTime } from '../charts/format.ts';
 import { SEQUENTIAL, type Scheme } from '../charts/palette.ts';
 import { useColorScheme } from '../charts/useColorScheme.ts';
+import { ChartLayout } from '../components/ChartLayout.tsx';
 import { Panel } from '../components/Panel.tsx';
 import { SegmentedControl } from '../components/SegmentedControl.tsx';
 import { useQuery } from '../hooks/useQuery.ts';
@@ -340,25 +341,28 @@ export function ProcessGantt({ range, name, uid, highlight, title = 'Process lif
       loading={q.loading}
       error={q.error}
       empty={d && !q.stale && !d.bars.length ? 'No process with network I/O ran in this range.' : undefined}
-      actions={
-        name ? undefined : (
-          <span className="ctl-group">
-            <span className="ctl-label">lanes by</span>
-            <SegmentedControl<GanttSort> label="Sort lanes by" options={SORT_OPTIONS} value={sort} onChange={(v) => setSort(v)} />
-          </span>
-        )
-      }
     >
-      <div className="chart-wrap">
-        <EChart
-          option={option}
-          onEvents={onEvents}
-          onInit={push}
-          chartRef={chart}
-          height={height}
-          ariaLabel={`Process lifetimes: ${n} instances in ${lanes} lanes`}
-        />
-      </div>
+      <ChartLayout
+        side={
+          name ? null : (
+            <span className="ctl-group">
+              <span className="ctl-label">lanes by</span>
+              <SegmentedControl<GanttSort> label="Sort lanes by" options={SORT_OPTIONS} value={sort} onChange={(v) => setSort(v)} />
+            </span>
+          )
+        }
+      >
+        <div className="chart-wrap">
+          <EChart
+            option={option}
+            onEvents={onEvents}
+            onInit={push}
+            chartRef={chart}
+            height={height}
+            ariaLabel={`Process lifetimes: ${n} instances in ${lanes} lanes`}
+          />
+        </div>
+      </ChartLayout>
     </Panel>
   );
 }

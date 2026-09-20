@@ -9,6 +9,8 @@ import {
   type ThroughputResponse,
 } from '../../shared/api.ts';
 import { urls, type TimeRange } from '../api.ts';
+import { ChartLayout } from '../components/ChartLayout.tsx';
+import { ChartLegend, type LegendItem } from '../charts/ChartLegend.tsx';
 import { EChart, useEChartRef } from '../charts/EChart.tsx';
 import type { EChartsCoreOption, EChartsType } from '../charts/echarts.ts';
 import { fmtDuration, fmtRate, fmtTime } from '../charts/format.ts';
@@ -306,6 +308,7 @@ export function ThroughputChart({ range, slots, overlays, actions, chartRef, unk
           : '';
   const source = d ? `${fmtDuration(d.step * 1000)} buckets from ${d.table === 'flows' ? 'raw flows' : 'the per-minute rollup'}` : '';
   const empty = d && !q.stale && !d.keys.length ? 'No traffic in this range.' : undefined;
+  const legendItems = useMemo<LegendItem[]>(() => series?.bands.map((b) => ({ name: b.label, color: b.color, faded: b.faded })) ?? [], [series]);
   const topKeys = useMemo(() => (d && !q.stale ? d.keys.filter((k) => k !== THROUGHPUT_OTHER) : null), [d, q.stale]);
 
   return (
@@ -322,54 +325,58 @@ export function ThroughputChart({ range, slots, overlays, actions, chartRef, unk
       loading={q.loading}
       error={q.error}
       empty={empty}
-      actions={
-        <>
-          <SegmentedControl label="Stack by" options={BY_OPTIONS} value={p.by} onChange={(v) => set({ by: v === 'app' ? null : v })} />
-          <SegmentedControl<ThroughputDir> label="Direction" options={DIR_OPTIONS} value={p.dir} onChange={(v) => set({ dir: v === 'both' ? null : v })} />
-          <SegmentedControl
-            label="Series shown"
-            options={TOP_OPTIONS}
-            value={String(p.top) as (typeof TOP_OPTIONS)[number]['value']}
-            onChange={(v) => set({ top: Number(v) === TOP_DEFAULT ? null : v })}
-          />
-          <span className="ctl-group">
-            <span className="ctl-label">compare</span>
-            <SegmentedControl<'off' | CompareOffset>
-              label="Compare with the same time earlier"
-              options={COMPARE_OPTIONS}
-              value={compare ?? 'off'}
-              onChange={(v) => set({ compare: v === 'off' ? null : v })}
-            />
-            {ghostNote && <span className="ctl-note">{ghostNote}</span>}
-          </span>
-          <span className="ctl-group">
-            <Toggle
-              label="Burst band"
-              checked={band && bandOk}
-              disabled={!bandOk}
-              onChange={(on) => set({ band: on ? '1' : null })}
-              title={
-                bandOk
-                  ? 'Shade each bucket from its mean up to the p95 of its per-tick rates, and dot its busiest tick (raw flows)'
-                  : BAND_TOO_LONG
-              }
-            />
-            {bandNote && <span className="ctl-note">{bandNote}</span>}
-          </span>
-          {actions}
-        </>
-      }
     >
-      <div className="chart-wrap">
-        <EChart
-          option={option}
-          chartRef={chart}
-          onInit={onInit}
-          group="history"
-          height={360}
-          ariaLabel={`Throughput by ${byNoun}, ${p.dir === 'both' ? 'sent stacked above zero and received below' : 'stacked'}`}
-        />
-      </div>
+      <ChartLayout
+        side={
+          <>
+            <SegmentedControl label="Stack by" options={BY_OPTIONS} value={p.by} onChange={(v) => set({ by: v === 'app' ? null : v })} />
+            <SegmentedControl<ThroughputDir> label="Direction" options={DIR_OPTIONS} value={p.dir} onChange={(v) => set({ dir: v === 'both' ? null : v })} />
+            <SegmentedControl
+              label="Series shown"
+              options={TOP_OPTIONS}
+              value={String(p.top) as (typeof TOP_OPTIONS)[number]['value']}
+              onChange={(v) => set({ top: Number(v) === TOP_DEFAULT ? null : v })}
+            />
+            <span className="ctl-group">
+              <span className="ctl-label">compare</span>
+              <SegmentedControl<'off' | CompareOffset>
+                label="Compare with the same time earlier"
+                options={COMPARE_OPTIONS}
+                value={compare ?? 'off'}
+                onChange={(v) => set({ compare: v === 'off' ? null : v })}
+              />
+              {ghostNote && <span className="ctl-note">{ghostNote}</span>}
+            </span>
+            <span className="ctl-group">
+              <Toggle
+                label="Burst band"
+                checked={band && bandOk}
+                disabled={!bandOk}
+                onChange={(on) => set({ band: on ? '1' : null })}
+                title={
+                  bandOk
+                    ? 'Shade each bucket from its mean up to the p95 of its per-tick rates, and dot its busiest tick (raw flows)'
+                    : BAND_TOO_LONG
+                }
+              />
+              {bandNote && <span className="ctl-note">{bandNote}</span>}
+            </span>
+            {actions}
+            <ChartLegend chart={chart} items={legendItems} title={byNoun} hint="Click to show or hide; double-click to drill into it" />
+          </>
+        }
+      >
+        <div className="chart-wrap">
+          <EChart
+            option={option}
+            chartRef={chart}
+            onInit={onInit}
+            group="history"
+            height={360}
+            ariaLabel={`Throughput by ${byNoun}, ${p.dir === 'both' ? 'sent stacked above zero and received below' : 'stacked'}`}
+          />
+        </div>
+      </ChartLayout>
       {below?.({ topKeys, answer: d && !q.stale ? d : null })}
     </Panel>
   );

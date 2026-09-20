@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
 import type { FlowAgg, HistoryFlowsResponse, LiveFlowsResponse } from '../../shared/api.ts';
 import { urls, type TimeRange } from '../api.ts';
+import { ChartLayout } from '../components/ChartLayout.tsx';
 import { Panel } from '../components/Panel.tsx';
 import { SegmentedControl } from '../components/SegmentedControl.tsx';
 import { usePoll } from '../hooks/usePoll.ts';
@@ -238,14 +239,19 @@ export function LiveFlowSankey({ slots }: { slots: SlotAssigner }) {
       loading={!d && !poll.error}
       error={!d ? poll.error : null}
       empty={d && !d.flows.some((f) => f.tx + f.rx > 0) ? 'No traffic in the last ticks.' : undefined}
-      actions={
-        <>
-          <AsnControl flows={d?.flows} byAsn={byAsn} onChange={setByAsn} />
-          <DirControl dir={dir} onChange={setDir} />
-        </>
-      }
     >
-      {d && <FlowSankey flows={d.flows} mode="live" dir={dir} slots={slots} onDest={onDest} byAsn={byAsn} onAsn={(asn) => openAsn(asn)} />}
+      {d && (
+        <ChartLayout
+          side={
+            <>
+              <AsnControl flows={d?.flows} byAsn={byAsn} onChange={setByAsn} />
+              <DirControl dir={dir} onChange={setDir} />
+            </>
+          }
+        >
+          <FlowSankey flows={d.flows} mode="live" dir={dir} slots={slots} onDest={onDest} byAsn={byAsn} onAsn={(asn) => openAsn(asn)} />
+        </ChartLayout>
+      )}
     </Panel>
   );
 }
@@ -271,14 +277,19 @@ export function HistoryFlowSankey({ range, filters, slots }: { range: TimeRange;
       loading={q.loading}
       error={q.error}
       empty={d && !d.flows.length ? 'No traffic in this range.' : undefined}
-      actions={
-        <>
-          <AsnControl flows={d?.flows} byAsn={byAsn} onChange={setByAsn} />
-          <DirControl dir={dir} onChange={setDir} />
-        </>
-      }
     >
-      {d && <FlowSankey flows={d.flows} mode="history" dir={dir} slots={slots} onDest={onDest} byAsn={byAsn} onAsn={(asn) => openAsn(asn, range)} />}
+      {d && (
+        <ChartLayout
+          side={
+            <>
+              <AsnControl flows={d?.flows} byAsn={byAsn} onChange={setByAsn} />
+              <DirControl dir={dir} onChange={setDir} />
+            </>
+          }
+        >
+          <FlowSankey flows={d.flows} mode="history" dir={dir} slots={slots} onDest={onDest} byAsn={byAsn} onAsn={(asn) => openAsn(asn, range)} />
+        </ChartLayout>
+      )}
     </Panel>
   );
 }
