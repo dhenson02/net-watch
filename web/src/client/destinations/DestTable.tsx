@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { DestinationsResponse, DestRow, RdnsResponse } from '../../shared/api.ts';
 import { getJson, urls, type TimeRange } from '../api.ts';
 import { fmtBytes } from '../charts/format.ts';
@@ -10,6 +10,26 @@ import { asnLabel, countryName } from './geoView.ts';
 const TABLE_ROWS = 50;
 /** Addresses per reverse-DNS request (the server's per-request budget). */
 const RDNS_BATCH = 20;
+
+type SortKey = 'dest' | 'name' | 'network' | 'country' | 'protocol' | 'tx' | 'rx' | 'procs';
+type Sort = { key: SortKey; desc: boolean };
+/** Text columns start ascending, numeric ones descending. */
+const TEXT_KEYS: SortKey[] = ['dest', 'name', 'network', 'country', 'protocol'];
+
+function SortHeader(props: { sort: Sort | null; k: SortKey; label: string; num?: boolean; onSort: (k: SortKey) => void }) {
+  const { sort, k, label, num, onSort } = props;
+  const active = sort?.key === k;
+  return (
+    <th className={num ? 'tt-num' : undefined} aria-sort={active ? (sort.desc ? 'descending' : 'ascending') : undefined}>
+      <button type="button" className={`th-sort${active ? ' active' : ''}`} onClick={() => onSort(k)}>
+        {label}
+        <span className="th-arrow" aria-hidden="true">
+          {active ? (sort.desc ? '▾' : '▴') : ''}
+        </span>
+      </button>
+    </th>
+  );
+}
 
 type Props = {
   data: DestinationsResponse;
@@ -28,7 +48,34 @@ export function DestTable({ data, range, onAsn, onCountry }: Props) {
   const [names, setNames] = useState<Record<string, string | null>>({});
   const [resolving, setResolving] = useState(false);
   const [rdnsError, setRdnsError] = useState<string | null>(null);
-  const rows = all ? data.rows : data.rows.slice(0, TABLE_ROWS);
+  const [sort, setSort] = useState<Sort | null>(null);
+  const onSort = (key: SortKey) =>
+    setSort((s) => (s?.key === key ? { key, desc: !s.desc } : { key, desc: !TEXT_KEYS.includes(key) }));
+  const sorted = useMemo(() => {
+    if (!sort) return data.rows;
+    const val = (r: DestRow): string | number | null => {
+      switch (sort.key) {
+        case 'dest': return r.dest;
+        case 'name': return names[r.ip] ?? null;
+        case 'network': return r.geo ? asnLabel(r.geo) : null;
+        case 'country': return r.geo?.cc || null;
+        case 'protocol': return `${r.app} ${r.proto}`;
+        case 'tx': return r.tx;
+        case 'rx': return r.rx;
+        case 'procs': return r.procs;
+      }
+    };
+    const dir = sort.desc ? -1 : 1;
+    return [...data.rows].sort((a, b) => {
+      const x = val(a);
+      const y = val(b);
+      if (x === y) return 0;
+      if (x === null) return 1; // missing values last either way
+      if (y === null) return -1;
+      return (typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y))) * dir;
+    });
+  }, [data.rows, sort, names]);
+  const rows = all ? sorted : sorted.slice(0, TABLE_ROWS);
   const unresolved = [...new Set(rows.filter((r) => !r.local && !(r.ip in names)).map((r) => r.ip))];
 
   const resolve = async () => {
@@ -60,14 +107,14 @@ export function DestTable({ data, range, onAsn, onCountry }: Props) {
         <table className="tt dest-table">
           <thead>
             <tr>
-              <th>Destination</th>
-              {data.rdns && <th>Name</th>}
-              {geoCols && <th>Network</th>}
-              {geoCols && <th>Country</th>}
-              <th>App</th>
-              <th className="tt-num">↑ Sent</th>
-              <th className="tt-num">↓ Received</th>
-              <th className="tt-num">Processes</th>
+              <SortHeader sort={sort} k="dest" label="Destination" onSort={onSort} />
+              {data.rdns && <SortHeader sort={sort} k="name" label="Name" onSort={onSort} />}
+              {geoCols && <SortHeader sort={sort} k="network" label="Network" onSort={onSort} />}
+              {geoCols && <SortHeader sort={sort} k="country" label="Country" onSort={onSort} />}
+              <SortHeader sort={sort} k="protocol" label="Protocol" onSort={onSort} />
+              <SortHeader sort={sort} k="tx" label="↑ Sent" num onSort={onSort} />
+              <SortHeader sort={sort} k="rx" label="↓ Received" num onSort={onSort} />
+              <SortHeader sort={sort} k="procs" label="Processes" num onSort={onSort} />
             </tr>
           </thead>
           <tbody>
