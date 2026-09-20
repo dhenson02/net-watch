@@ -996,26 +996,6 @@ input:focus-visible {
   padding: 0 16px;
 }
 
-/* Top talkers: filters on the left, table in a fixed-height scroller so rows
-   coming and going never change the panel height. */
-.tt-layout {
-  display: flex;
-  align-items: flex-start;
-  gap: 16px;
-}
-
-.tt-side {
-  flex: 0 0 200px;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 10px;
-}
-
-.tt-side .tt-filter {
-  width: 100%;
-}
-
 .tt-names {
   width: 100%;
   min-width: 0;
@@ -1072,47 +1052,10 @@ input:focus-visible {
   white-space: nowrap;
 }
 
-.tt-main {
-  flex: 1;
-  min-width: 0;
-}
-
-.table-scroll.tt-scroll {
-  height: 480px;
-  overflow: auto;
-  margin: 0;
-  padding: 0;
-}
-
-.tt-scroll .tt th {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  background: var(--surface);
-}
-
 .tt-empty {
   padding: 48px 16px;
   color: var(--muted);
   text-align: center;
-}
-
-@media (max-width: 800px) {
-  .tt-layout {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .tt-side {
-    flex-basis: auto;
-    flex-direction: row;
-    flex-wrap: wrap;
-    align-items: center;
-  }
-
-  .tt-side .tt-filter {
-    width: 200px;
-  }
 }
 
 .tt {
@@ -1753,6 +1696,48 @@ textarea,
 .proto-legend {
   display: flex;
   gap: var(--space-md);
-  margin: var(--space-sm) 0;
+  margin: 0;
   font-size: var(--fs-sm);
+}
+
+/* Tables: filters in the side panel like a chart, in a fixed-height box.
+   The panel and the table scroll separately; headers stick to the table's top. */
+.table-layout {
+  height: 480px;
+}
+
+.table-main {
+  overflow: auto;
+}
+
+.table-main .table-scroll {
+  overflow: visible;
+  margin: 0;
+  padding: 0;
+}
+
+.table-main .tt th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface);
+}
+
+.chart-side .tt-filter {
+  width: 100%;
+}
+
+.chart-side .tt-names ul {
+  max-height: none;
+  overflow: visible;
+}
+
+@media (max-width: 800px) {
+  .table-layout {
+    height: auto;
+  }
+
+  .table-main {
+    max-height: 480px;
+  }
 }

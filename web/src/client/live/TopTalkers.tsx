@@ -4,6 +4,7 @@ import { fmtBytes, fmtDuration, fmtRate } from '../charts/format.ts';
 import { RX, TX } from '../charts/palette.ts';
 import { useColorScheme } from '../charts/useColorScheme.ts';
 import { Panel } from '../components/Panel.tsx';
+import { TableLayout } from '../components/TableLayout.tsx';
 import { Sparkline } from '../components/Sparkline.tsx';
 import { Toggle } from '../components/Toggle.tsx';
 import { useLive } from '../hooks/useLive.ts';
@@ -180,7 +181,7 @@ export function TopTalkers() {
   const emptyText = rows && view.visible.length === 0 ? (view.total ? 'No process matches.' : 'No processes in the latest tick.') : null;
 
   const filters = (
-    <aside className="tt-side" aria-label="Filters">
+    <>
       <input
         type="search"
         className="tt-filter"
@@ -221,7 +222,7 @@ export function TopTalkers() {
           </ul>
         </fieldset>
       )}
-    </aside>
+    </>
   );
 
   return (
@@ -237,10 +238,9 @@ export function TopTalkers() {
       error={!snap.data ? snap.error : null}
     >
       {snap.data && snap.error && <p className="note tt-stale">Refresh failed ({snap.error}); showing the last good list.</p>}
-      <div className="tt-layout">
-        {filters}
-        <div className="tt-main">
-          <div className="table-scroll tt-scroll">
+      <TableLayout side={filters}>
+        <div>
+          <div className="table-scroll">
             <table className="tt">
               <thead>
                 <tr>
@@ -291,7 +291,7 @@ export function TopTalkers() {
             </p>
           )}
         </div>
-      </div>
+      </TableLayout>
     </Panel>
   );
 }

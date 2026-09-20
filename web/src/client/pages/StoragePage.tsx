@@ -135,16 +135,6 @@ export function StoragePage() {
                       <h3>
                         {t.table} <span className="muted">by {t.by}{t.by === 'not partitioned' ? '' : ` (${d?.clickhouseTimezone ?? ''})`}</span>
                       </h3>
-                      {t.deletable && (
-                        <button
-                          type="button"
-                          className="btn btn-danger-outline"
-                          disabled={!canDelete || chosen.size === 0}
-                          onClick={() => askCh(t, [...chosen])}
-                        >
-                          Delete selected{chosen.size > 0 ? ` (${chosen.size})` : ''}
-                        </button>
-                      )}
                     </div>
                     {t.rows.length === 0 ? (
                       <p className="muted">No data.</p>
@@ -159,6 +149,18 @@ export function StoragePage() {
                         onSelectAll={(on) => toggleAll(id, t.rows, on)}
                         disabled={!canDelete}
                         onDelete={(keys) => askCh(t, keys)}
+                        side={
+                          t.deletable && (
+                            <button
+                              type="button"
+                              className="btn btn-danger-outline"
+                              disabled={!canDelete || chosen.size === 0}
+                              onClick={() => askCh(t, [...chosen])}
+                            >
+                              Delete selected{chosen.size > 0 ? ` (${chosen.size})` : ''}
+                            </button>
+                          )
+                        }
                       />
                     )}
                   </div>
@@ -193,14 +195,6 @@ export function StoragePage() {
                   <h3>
                     Ended processes <span className="muted">by day they ended</span>
                   </h3>
-                  <button
-                    type="button"
-                    className="btn btn-danger-outline"
-                    disabled={!canDelete || sel('redis').size === 0}
-                    onClick={() => askRedis(redis.days, [...sel('redis')])}
-                  >
-                    Delete selected{sel('redis').size > 0 ? ` (${sel('redis').size})` : ''}
-                  </button>
                 </div>
                 {redis.days.length === 0 ? (
                   <p className="muted">No ended processes are kept.</p>
@@ -214,6 +208,16 @@ export function StoragePage() {
                     onSelectAll={(on) => toggleAll('redis', redis.days, on)}
                     disabled={!canDelete}
                     onDelete={(keys) => askRedis(redis.days, keys)}
+                    side={
+                      <button
+                        type="button"
+                        className="btn btn-danger-outline"
+                        disabled={!canDelete || sel('redis').size === 0}
+                        onClick={() => askRedis(redis.days, [...sel('redis')])}
+                      >
+                        Delete selected{sel('redis').size > 0 ? ` (${sel('redis').size})` : ''}
+                      </button>
+                    }
                   />
                 )}
               </div>

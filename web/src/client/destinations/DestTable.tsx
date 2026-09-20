@@ -1,13 +1,12 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import type { DestinationsResponse, DestRow, RdnsResponse } from '../../shared/api.ts';
 import { getJson, urls, type TimeRange } from '../api.ts';
 import { fmtBytes } from '../charts/format.ts';
 import { historyHref } from '../process/beaconStrip.ts';
+import { TableLayout } from '../components/TableLayout.tsx';
 import { Link } from '../router.ts';
 import { asnLabel, countryName } from './geoView.ts';
 
-/** Rows shown until expanded. */
-const TABLE_ROWS = 50;
 /** Addresses per reverse-DNS request (the server's per-request budget). */
 const RDNS_BATCH = 20;
 
@@ -36,6 +35,8 @@ type Props = {
   range: TimeRange;
   onAsn: (asn: number) => void;
   onCountry: (cc: string) => void;
+  /** Filters and toggles for the side panel. */
+  side?: ReactNode;
 };
 
 /**
@@ -43,8 +44,7 @@ type Props = {
  * it), network, country, main app, bytes each way and the processes. The
  * address links to History filtered to it over the same range.
  */
-export function DestTable({ data, range, onAsn, onCountry }: Props) {
-  const [all, setAll] = useState(false);
+export function DestTable({ data, range, onAsn, onCountry, side }: Props) {
   const [names, setNames] = useState<Record<string, string | null>>({});
   const [resolving, setResolving] = useState(false);
   const [rdnsError, setRdnsError] = useState<string | null>(null);
@@ -75,7 +75,7 @@ export function DestTable({ data, range, onAsn, onCountry }: Props) {
       return (typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y))) * dir;
     });
   }, [data.rows, sort, names]);
-  const rows = all ? sorted : sorted.slice(0, TABLE_ROWS);
+  const rows = sorted;
   const unresolved = [...new Set(rows.filter((r) => !r.local && !(r.ip in names)).map((r) => r.ip))];
 
   const resolve = async () => {
@@ -92,20 +92,22 @@ export function DestTable({ data, range, onAsn, onCountry }: Props) {
   };
 
   const geoCols = data.geo;
-  return (
+  const sidePanel = (
     <>
+      {side}
       {data.rdns && (
-        <p className="dest-rdns">
+        <div className="dest-rdns">
           <button type="button" className="link-button" disabled={resolving || unresolved.length === 0} onClick={resolve}>
-            {resolving ? 'Looking up…' : unresolved.length ? `Look up names (${Math.min(RDNS_BATCH, unresolved.length)} of ${unresolved.length} shown)` : 'All shown names looked up'}
+            {resolving ? 'Looking up…' : unresolved.length ? `Look up names (${Math.min(RDNS_BATCH, unresolved.length)} of ${unresolved.length})` : 'All names looked up'}
           </button>
-          <span className="muted"> reverse DNS, sent from the monitored host</span>
-          {rdnsError && <span className="panel-error"> {rdnsError}</span>}
-        </p>
+          <div className="muted">reverse DNS, sent from the monitored host</div>
+          {rdnsError && <div className="panel-error">{rdnsError}</div>}
+        </div>
       )}
-      <p className="proto-legend muted">
-        Protocol: <span className="proto-tcp">■ TCP</span> <span className="proto-udp">■ UDP</span>
-      </p>
+    </>
+  );
+  return (
+    <TableLayout side={sidePanel}>
       <div className="table-scroll">
         <table className="tt dest-table">
           <thead>
@@ -127,12 +129,7 @@ export function DestTable({ data, range, onAsn, onCountry }: Props) {
           </tbody>
         </table>
       </div>
-      {data.rows.length > TABLE_ROWS && (
-        <button type="button" className="link-button" onClick={() => setAll(!all)}>
-          {all ? `Show the first ${TABLE_ROWS}` : `Show all ${data.rows.length}`}
-        </button>
-      )}
-    </>
+    </TableLayout>
   );
 }
 

@@ -162,11 +162,21 @@ export function DestinationsPage() {
           error={dests.error}
           wide
           actions={
-            <SegmentedControl<DestScope> label="Addresses" options={SCOPE_OPTIONS} value={scope} onChange={(v) => setSearchParams({ scope: v === 'all' ? null : v })} />
+            <p className="proto-legend muted">
+              Protocol: <span className="proto-tcp">■ TCP</span> <span className="proto-udp">■ UDP</span>
+            </p>
           }
           empty={dests.data && !dests.data.rows.length ? 'No destinations match in this range.' : undefined}
         >
-          {dests.data && dests.data.rows.length > 0 && <DestTable data={dests.data} range={range} onAsn={selectAsn} onCountry={selectCc} />}
+          {dests.data && dests.data.rows.length > 0 && (
+            <DestTable
+              data={dests.data}
+              range={range}
+              onAsn={selectAsn}
+              onCountry={selectCc}
+              side={<SegmentedControl<DestScope> label="Addresses" options={SCOPE_OPTIONS} value={scope} onChange={(v) => setSearchParams({ scope: v === 'all' ? null : v })} />}
+            />
+          )}
         </Panel>
       </div>
     </>

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { ScatterBasis, ScatterGroup, ScatterPoint, ScatterResponse } from '../../shared/api.ts';
 import { urls, type TimeRange } from '../api.ts';
 import { cssVar } from '../charts/cssVar.ts';
@@ -9,6 +9,7 @@ import { fmtBytes, fmtDuration, fmtTime } from '../charts/format.ts';
 import { OTHER, slotColor, type SlotAssigner } from '../charts/palette.ts';
 import { useColorScheme } from '../charts/useColorScheme.ts';
 import { ChartLayout } from '../components/ChartLayout.tsx';
+import { TableLayout } from '../components/TableLayout.tsx';
 import { Panel } from '../components/Panel.tsx';
 import { SegmentedControl } from '../components/SegmentedControl.tsx';
 import { useQuery } from '../hooks/useQuery.ts';
@@ -273,24 +274,32 @@ export function TxRxScatter({ range, filters, slots }: Props) {
       </ChartLayout>
       {rows && (
         <div className="scatter-selection">
-          <p className="scatter-selection-head">
-            <span>
-              {selected!.length} selected{selected!.length > MAX_ROWS ? `, the largest ${MAX_ROWS} listed` : ''}
-            </span>
-            <button type="button" className="chip-clear" onClick={clear}>
-              clear selection
-            </button>
-          </p>
-          {rows.length > 0 && <SelectionTable rows={rows} group={d?.group ?? group} />}
+          {rows.length > 0 && (
+            <SelectionTable
+              rows={rows}
+              group={d?.group ?? group}
+              side={
+                <>
+                  <span>
+                    {selected!.length} selected{selected!.length > MAX_ROWS ? `, the largest ${MAX_ROWS} listed` : ''}
+                  </span>
+                  <button type="button" className="chip-clear" onClick={clear}>
+                    clear selection
+                  </button>
+                </>
+              }
+            />
+          )}
         </div>
       )}
     </Panel>
   );
 }
 
-function SelectionTable({ rows, group }: { rows: ScatterPoint[]; group: ScatterGroup }) {
+function SelectionTable({ rows, group, side }: { rows: ScatterPoint[]; group: ScatterGroup; side: ReactNode }) {
   return (
-    <div className="table-scroll">
+    <TableLayout side={side}>
+      <div className="table-scroll">
       <table className="tt">
         <thead>
           <tr>
@@ -332,7 +341,8 @@ function SelectionTable({ rows, group }: { rows: ScatterPoint[]; group: ScatterG
           })}
         </tbody>
       </table>
-    </div>
+      </div>
+    </TableLayout>
   );
 }
 

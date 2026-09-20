@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import type { StorageBreakdownResponse, StorageRow } from '../../shared/api.ts';
 import { getJson } from '../api.ts';
 import { fmtBytes } from '../charts/format.ts';
+import { TableLayout } from '../components/TableLayout.tsx';
 
 type Props = {
   rows: StorageRow[];
@@ -17,6 +18,8 @@ type Props = {
   disabled: boolean;
   /** Where an `expandable` row's finer rows come from. */
   breakdownUrl?: (key: string) => string;
+  /** Actions for the side panel (delete selected). */
+  side?: ReactNode;
 };
 
 interface RowProps extends Pick<Props, 'selected' | 'onSelect' | 'onDelete' | 'disabled' | 'breakdownUrl'> {
@@ -107,13 +110,14 @@ function Row({ row, max, depth, selected, onSelect, onDelete, disabled, breakdow
 }
 
 /** Sizes per row with a bar, checkboxes for several-at-once deletes, a delete button per row, and hourly (or daily) detail under a ▸. */
-export function StorageTable({ rows, countLabel, labelHeader, selected, onSelect, onSelectAll, onDelete, disabled, breakdownUrl }: Props) {
+export function StorageTable({ rows, countLabel, labelHeader, selected, onSelect, onSelectAll, onDelete, disabled, breakdownUrl, side }: Props) {
   const max = Math.max(1, ...rows.map((r) => r.bytes));
   const deletable = rows.filter((r) => r.deletable);
   const allOn = deletable.length > 0 && deletable.every((r) => selected.has(r.key));
 
   return (
-    <div className="table-scroll">
+    <TableLayout side={side}>
+      <div className="table-scroll">
       <table className="tt storage-table">
         <thead>
           <tr>
@@ -135,6 +139,7 @@ export function StorageTable({ rows, countLabel, labelHeader, selected, onSelect
           ))}
         </tbody>
       </table>
-    </div>
+      </div>
+    </TableLayout>
   );
 }

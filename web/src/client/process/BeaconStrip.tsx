@@ -8,6 +8,7 @@ import { fmtBytes, fmtDuration, fmtTime } from '../charts/format.ts';
 import { tipRow } from '../charts/mirroredStack.ts';
 import { CATEGORICAL } from '../charts/palette.ts';
 import { useColorScheme } from '../charts/useColorScheme.ts';
+import { TableLayout } from '../components/TableLayout.tsx';
 import { ChartLayout } from '../components/ChartLayout.tsx';
 import { Panel } from '../components/Panel.tsx';
 import { SegmentedControl } from '../components/SegmentedControl.tsx';
@@ -41,8 +42,6 @@ const ROW_PX = 20;
 const GRID = { left: 236, right: 214, top: 8, bottom: 34 };
 /** Scatter switches to ECharts' large mode (one size and color for all dots) past this. */
 const LARGE_THRESHOLD = 5000;
-/** The table shows this many rows until expanded. */
-const TABLE_ROWS = 15;
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
@@ -290,10 +289,9 @@ export function ProcessBeacons({ p }: { p: ProcessInfo }) {
 
 /** The destinations, periodic (score > 0.8) first: a lightweight periodic-connection detector. */
 function PeriodicTable({ dests, range }: { dests: BeaconDest[]; range: TimeRange }) {
-  const [all, setAll] = useState(false);
   const labels = useMemo(() => rowLabels(dests), [dests]);
   // The server sorts by score, then ticks: periodic rows come first already.
-  const rows = all ? dests : dests.slice(0, TABLE_ROWS);
+  const rows = dests;
   return (
     <Panel
       title="Periodic connections"
@@ -301,7 +299,8 @@ function PeriodicTable({ dests, range }: { dests: BeaconDest[]; range: TimeRange
       footnote={null}
       wide
     >
-      <div className="table-scroll">
+      <TableLayout>
+        <div className="table-scroll">
         <table className="tt beacon-table">
           <thead>
             <tr>
@@ -337,12 +336,8 @@ function PeriodicTable({ dests, range }: { dests: BeaconDest[]; range: TimeRange
             ))}
           </tbody>
         </table>
-      </div>
-      {dests.length > TABLE_ROWS && (
-        <button type="button" className="link-button" onClick={() => setAll(!all)}>
-          {all ? `Show the first ${TABLE_ROWS}` : `Show all ${dests.length}`}
-        </button>
-      )}
+        </div>
+      </TableLayout>
     </Panel>
   );
 }

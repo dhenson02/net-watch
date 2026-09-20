@@ -1,8 +1,9 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import type { NewDest, NewDestsResponse, ProcessInfo } from '../../shared/api.ts';
 import { urls, type TimeRange } from '../api.ts';
 import { fmtBytes, fmtTime } from '../charts/format.ts';
 import { Panel } from '../components/Panel.tsx';
+import { TableLayout } from '../components/TableLayout.tsx';
 import { hiddenText, parseNewDestOptions } from '../history/newDests.ts';
 import { NewDestToggles } from '../history/NewDestTrack.tsx';
 import { processPath } from '../history/clusterMarkers.ts';
@@ -12,8 +13,6 @@ import { useGeoEpoch } from '../geoStatus.ts';
 import { Link, setSearchParams, useSearch } from '../router.ts';
 import { BEACON_FOCUS_PARAM, BEACON_SCOPE_PARAM, BEACONS_PANEL_ID, historyHref } from './beaconStrip.ts';
 
-/** The table shows this many rows until expanded. */
-const TABLE_ROWS = 15;
 const HOUR = 3_600_000;
 
 /** Focus the beaconing strip (15) on this address, over every instance of the program, and scroll to it. */
@@ -31,11 +30,10 @@ function focusStrip(d: NewDest) {
 export function NewDestList({ p, week }: { p: ProcessInfo; week: TimeRange }) {
   const opts = parseNewDestOptions(useSearch());
   const q = useQuery<NewDestsResponse>(urls.historyNewDests(week, { names: [p.name], ...opts }), useGeoEpoch());
-  const [all, setAll] = useState(false);
   const d = q.data;
   const id = `${p.pid}:${p.start_ns}`;
   const dests = useMemo(() => (d ? [...d.dests].sort((a, b) => b.firstMs - a.firstMs || a.dest.localeCompare(b.dest)) : []), [d]);
-  const rows = all ? dests : dests.slice(0, TABLE_ROWS);
+  const rows = dests;
   const hidden = d ? hiddenText(d) : null;
   const foot = d
     ? [`${fmtTime(week.from)} – ${fmtTime(week.to)}`, d.truncated ? `the first ${d.dests.length}` : null, hidden, `${d.ports ? 'address and port' : 'address'}, minute resolution`]
@@ -47,7 +45,6 @@ export function NewDestList({ p, week }: { p: ProcessInfo; week: TimeRange }) {
     <Panel
       title="New destinations"
       subtitle={`Addresses ${p.name} contacted for the first time in the last 7 days (no earlier traffic from any ${p.name} in the retained history), newest first. Click a row to find it on the beaconing strip`}
-      actions={<NewDestToggles opts={opts} />}
       footnote={foot}
       wide
       loading={q.loading}
@@ -55,7 +52,7 @@ export function NewDestList({ p, week }: { p: ProcessInfo; week: TimeRange }) {
       empty={d && !q.stale && dests.length === 0 ? `No new destinations for ${p.name} in the last 7 days.${hidden ? ` ${hidden}.` : ''}` : undefined}
     >
       {dests.length > 0 && (
-        <>
+        <TableLayout side={<NewDestToggles opts={opts} />}>
           <div className="table-scroll">
             <table className="tt newdest-table">
               <thead>
@@ -105,12 +102,7 @@ export function NewDestList({ p, week }: { p: ProcessInfo; week: TimeRange }) {
               </tbody>
             </table>
           </div>
-          {dests.length > TABLE_ROWS && (
-            <button type="button" className="link-button" onClick={() => setAll(!all)}>
-              {all ? `Show the first ${TABLE_ROWS}` : `Show all ${dests.length}`}
-            </button>
-          )}
-        </>
+        </TableLayout>
       )}
     </Panel>
   );
