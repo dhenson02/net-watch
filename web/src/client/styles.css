@@ -1743,3 +1743,16 @@ textarea,
 .chart-side .ctl-group > .ctl-label {
   display: none;
 }
+
+.proto-tcp {
+  color: var(--accent);
+}
+.proto-udp {
+  color: var(--down);
+}
+.proto-legend {
+  display: flex;
+  gap: var(--space-md);
+  margin: var(--space-sm) 0;
+  font-size: var(--fs-sm);
+}

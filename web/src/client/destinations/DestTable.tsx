@@ -59,7 +59,7 @@ export function DestTable({ data, range, onAsn, onCountry }: Props) {
         case 'name': return names[r.ip] ?? null;
         case 'network': return r.geo ? asnLabel(r.geo) : null;
         case 'country': return r.geo?.cc || null;
-        case 'protocol': return `${r.app} ${r.proto}`;
+        case 'protocol': return r.app;
         case 'tx': return r.tx;
         case 'rx': return r.rx;
         case 'procs': return r.procs;
@@ -103,6 +103,9 @@ export function DestTable({ data, range, onAsn, onCountry }: Props) {
           {rdnsError && <span className="panel-error"> {rdnsError}</span>}
         </p>
       )}
+      <p className="proto-legend muted">
+        Protocol: <span className="proto-tcp">■ TCP</span> <span className="proto-udp">■ UDP</span>
+      </p>
       <div className="table-scroll">
         <table className="tt dest-table">
           <thead>
@@ -175,8 +178,8 @@ function Row(props: {
           )}
         </td>
       )}
-      <td>
-        {r.app} <span className="muted">{r.proto}</span>
+      <td className={r.proto.toLowerCase() === 'udp' ? 'proto-udp' : 'proto-tcp'} title={r.proto.toUpperCase()}>
+        {r.app}
       </td>
       <td className="tt-num">{fmtBytes(r.tx)}</td>
       <td className="tt-num">{fmtBytes(r.rx)}</td>
