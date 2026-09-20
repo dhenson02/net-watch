@@ -6,6 +6,7 @@ import { fmtBytes } from '../charts/format.ts';
 import { RX, TX } from '../charts/palette.ts';
 import { useColorScheme } from '../charts/useColorScheme.ts';
 import { ASN_BARS, asnBars, countryName, pctText } from './geoView.ts';
+import { fontPx } from '../charts/fonts.ts';
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
@@ -52,7 +53,7 @@ export function AsnBars({ data, selected, onSelect }: Props) {
         axisLabel: { formatter: (v: number) => fmtBytes(Math.abs(v)), hideOverlap: true },
         splitLine: { lineStyle: { opacity: 0.5 } },
       },
-      yAxis: { type: 'category', data: bars.labels, axisTick: { show: false }, axisLabel: { fontSize: 11 } },
+      yAxis: { type: 'category', data: bars.labels, axisTick: { show: false }, axisLabel: { fontSize: fontPx(12) } },
       series: [
         {
           id: 'asn:tx',

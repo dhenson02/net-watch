@@ -12,6 +12,7 @@ import { useQuery } from '../hooks/useQuery.ts';
 import { navigate } from '../router.ts';
 import { clusterMarkers, clusterTitle, lifecycleEvents, processPath, type EventKind, type MarkerCluster } from './clusterMarkers.ts';
 import { useFollowZoom } from './useFollowZoom.ts';
+import { fontPx } from '../charts/fonts.ts';
 
 /** The markers' plot height (px), plus a little room above and below. */
 const TRACK = 36;
@@ -96,7 +97,7 @@ export function LifecycleTrack({ range, mode, names, uid, slots, main }: Props) 
           value: [c.t, kind],
           symbolSize: n > 1 ? 12 : 9,
           itemStyle: { color: colorOf(c, muted), opacity: 0.9 },
-          label: n > 1 ? { show: true, position: 'right', distance: 2, formatter: String(n), fontSize: 10, color: muted } : { show: false },
+          label: n > 1 ? { show: true, position: 'right', distance: 2, formatter: String(n), fontSize: fontPx(12), color: muted } : { show: false },
         };
       }),
       emphasis: { scale: 1.3 },
@@ -118,7 +119,7 @@ export function LifecycleTrack({ range, mode, names, uid, slots, main }: Props) 
         data: rows,
         axisLine: { show: false },
         axisTick: { show: false },
-        axisLabel: { fontSize: 10, color: muted, formatter: (v: string) => (v === 'start' ? '▲ start' : '▼ end') },
+        axisLabel: { fontSize: fontPx(12), color: muted, formatter: (v: string) => (v === 'start' ? '▲ start' : '▼ end') },
       },
       // Driven by the chart above (see the effect); a new range resets it like the chart does.
       dataZoom: [{ type: 'inside', xAxisIndex: 0, disabled: true, start: 0, end: 100 }],

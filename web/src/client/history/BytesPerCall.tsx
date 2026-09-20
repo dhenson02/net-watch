@@ -30,6 +30,7 @@ import {
   shares,
 } from './bytesPerCall.ts';
 import { processCallsRange } from './callsSeries.ts';
+import { fontPx } from '../charts/fonts.ts';
 
 const DIR_OPTIONS = [
   { value: 'tx', label: 'sends', title: 'Bytes per send call' },
@@ -152,7 +153,7 @@ export function HistoryBytesPerCall({ range, filters }: { range: TimeRange; filt
         text: [fmtShare(max || 1), '0 %'],
         formatter: (v: number) => fmtShare(v),
         textGap: 8,
-        textStyle: { color: muted, fontSize: 11 },
+        textStyle: { color: muted, fontSize: fontPx(12) },
         inRange: { color: [...SEQUENTIAL[scheme]] },
       },
       series: [

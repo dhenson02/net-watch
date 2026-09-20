@@ -6,6 +6,7 @@
 // covers it.
 import type { EChartsCoreOption } from './echarts.ts';
 import { GRID } from './mirroredStack.ts';
+import { fontPx } from './fonts.ts';
 
 export interface MultiplePanel {
   /** The y axis name, drawn at the panel's top-left. */
@@ -97,7 +98,7 @@ export function smallMultiplesOption(spec: SmallMultiplesSpec, layout: Layout, m
       name: p.name,
       nameLocation: 'end',
       nameGap: 8,
-      nameTextStyle: { align: 'left', color: muted, fontSize: 11 },
+      nameTextStyle: { align: 'left', color: muted, fontSize: fontPx(12) },
       splitNumber: 3,
       ...p.yAxis,
     })),

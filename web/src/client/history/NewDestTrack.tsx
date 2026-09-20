@@ -15,6 +15,7 @@ import { processPath } from './clusterMarkers.ts';
 import { clusterNewDests, clusterTitle, hiddenText, namesByCount, ND_PARAMS, type NewDestCluster, type NewDestOptions } from './newDests.ts';
 import { colorSlots } from './scatterPoints.ts';
 import { useFollowZoom } from './useFollowZoom.ts';
+import { fontPx } from '../charts/fonts.ts';
 
 /** The markers' plot height (px), plus a little room above and below. */
 const TRACK = 22;
@@ -97,7 +98,7 @@ export function NewDestTrack({ range, name, opts, slots, main }: Props) {
         data: ['new'],
         axisLine: { show: false },
         axisTick: { show: false },
-        axisLabel: { fontSize: 10, color: muted, formatter: () => '◆ new dest' },
+        axisLabel: { fontSize: fontPx(12), color: muted, formatter: () => '◆ new dest' },
       },
       dataZoom: [{ type: 'inside', xAxisIndex: 0, disabled: true, start: 0, end: 100 }],
       tooltip: {
@@ -122,7 +123,7 @@ export function NewDestTrack({ range, name, opts, slots, main }: Props) {
               value: [c.t, 'new'],
               symbolSize: n > 1 ? 13 : 10,
               itemStyle: { color: colorOf(c.name, muted), opacity: 0.9 },
-              label: n > 1 ? { show: true, position: 'right', distance: 2, formatter: String(n), fontSize: 10, color: muted } : { show: false },
+              label: n > 1 ? { show: true, position: 'right', distance: 2, formatter: String(n), fontSize: fontPx(12), color: muted } : { show: false },
             };
           }),
           emphasis: { scale: 1.3 },

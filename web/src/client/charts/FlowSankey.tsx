@@ -13,6 +13,7 @@ import type { EChartsCoreOption } from './echarts.ts';
 import { fmtBytes, fmtRate, fmtTime } from './format.ts';
 import { appColor, OTHER, slotColor, type Scheme, type SlotAssigner } from './palette.ts';
 import { useColorScheme } from './useColorScheme.ts';
+import { fontPx } from './fonts.ts';
 
 /** Live mode averages this many seconds of ticks, refreshed every 2 s. */
 const LIVE_SECONDS = 10;
@@ -135,7 +136,7 @@ export function FlowSankey({ flows: incoming, mode, dir, slots, onDest, byAsn = 
           draggable: false,
           emphasis: { focus: 'adjacency' },
           lineStyle: { color: 'gradient', curveness: 0.5, opacity: 0.35 },
-          label: { fontSize: 11, formatter: (p: { name: string }) => label(p.name) },
+          label: { fontSize: fontPx(12), formatter: (p: { name: string }) => label(p.name) },
           data: graph.nodes.map((n) => ({
             name: n.id,
             depth: n.depth,

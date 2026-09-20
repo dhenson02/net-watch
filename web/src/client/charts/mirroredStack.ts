@@ -11,6 +11,7 @@
 // band, whose rows `sectionRows` puts inside each section instead).
 import type { EChartsCoreOption } from './echarts.ts';
 import { fmtRate, fmtTime } from './format.ts';
+import { fontPx, chartFontFamily } from './fonts.ts';
 
 /** tx and rx, or tx + rx summed into one stack. */
 export type Stack = 'tx' | 'rx' | 'sum';
@@ -139,7 +140,7 @@ export function mirroredStackOption({ stacks, muted, tooltip, grid: gridPatch, e
     ...pos,
     silent: true,
     z: 10,
-    style: { text, fill: muted, font: '11px sans-serif' },
+    style: { text, fill: muted, font: `${fontPx(12)}px ${chartFontFamily()}` },
   });
   const mirrored = stacks.length === 2;
   return {

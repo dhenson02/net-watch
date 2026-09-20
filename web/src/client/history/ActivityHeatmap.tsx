@@ -30,6 +30,7 @@ import {
   type HeatWeeks,
 } from './heatmapCells.ts';
 import { THROUGHPUT_PANEL_ID } from './ThroughputChart.tsx';
+import { fontPx } from '../charts/fonts.ts';
 
 const METRIC_OPTIONS = [
   { value: 'total', label: 'total', title: 'Bytes sent + received' },
@@ -212,7 +213,7 @@ function HeatGrid({
         // The hover indicator shows the value back in kbps, not its log.
         formatter: (v: number) => fmtRate(fromLog(v)),
         textGap: 8,
-        textStyle: { color: muted, fontSize: 11 },
+        textStyle: { color: muted, fontSize: fontPx(12) },
         inRange: { color: [...SEQUENTIAL[scheme]] },
       },
       series: [

@@ -10,6 +10,7 @@ import { useColorScheme } from '../charts/useColorScheme.ts';
 import { setSearchParams } from '../router.ts';
 import { fmtShare, medianShare, sharePoints, UNKNOWN_DRILL, unknownText } from './unknownShare.ts';
 import { useFollowZoom } from './useFollowZoom.ts';
+import { fontPx } from '../charts/fonts.ts';
 
 /** The share's plot height (px), plus a little room above and below: 48 px in all. */
 const TRACK = 40;
@@ -62,7 +63,7 @@ export function UnknownShareTrack({ range, answer, main }: Props) {
         min: 0,
         max: 1,
         interval: 1,
-        axisLabel: { fontSize: 10, color: muted, formatter: (v: number) => (v === 1 ? '100 %' : '0 %') },
+        axisLabel: { fontSize: fontPx(12), color: muted, formatter: (v: number) => (v === 1 ? '100 %' : '0 %') },
         splitLine: { show: false },
       },
       // Driven by the chart above (useFollowZoom); a new range resets it like the chart does.

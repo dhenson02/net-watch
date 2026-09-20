@@ -13,6 +13,7 @@ import { useQuery } from '../hooks/useQuery.ts';
 import { navigate, useSearchParam } from '../router.ts';
 import { processPath } from './clusterMarkers.ts';
 import { barEnd, colorExtent, laneLabel, logBytes, packLanes, parseSort, SORT_PARAM, type GanttSort, type Lane, type Packed } from './packLanes.ts';
+import { fontPx } from '../charts/fonts.ts';
 
 const SORT_OPTIONS = [
   { value: 'start', label: 'first start', title: 'Lanes in order of their first instance’s start' },
@@ -183,7 +184,7 @@ export function ProcessGantt({ range, name, uid, highlight, title = 'Process lif
         text: [fmtBytes(10 ** hi), fmtBytes(lo <= 0 ? 0 : 10 ** lo)],
         formatter: (v: number) => fmtBytes(10 ** v),
         textGap: 8,
-        textStyle: { color: muted, fontSize: 11 },
+        textStyle: { color: muted, fontSize: fontPx(12) },
         inRange: { color: ramp(scheme) },
       },
       series: [

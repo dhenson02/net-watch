@@ -2,6 +2,7 @@
 // the same ink, gridlines and surface as the rest of the UI. ECharts cannot
 // switch a theme in place: EChart re-creates the chart when the scheme flips.
 import { echarts } from './echarts.ts';
+import { chartFontFamily, fontPx } from './fonts.ts';
 import { CATEGORICAL, type Scheme } from './palette.ts';
 
 export function themeName(scheme: Scheme): string {
@@ -16,21 +17,21 @@ export function themeName(scheme: Scheme): string {
   const axisCommon = {
     axisLine: { lineStyle: { color: axis } },
     axisTick: { lineStyle: { color: axis } },
-    axisLabel: { color: muted },
+    axisLabel: { color: muted, fontSize: fontPx(13) },
     splitLine: { lineStyle: { color: grid, width: 1 } },
-    nameTextStyle: { color: muted },
+    nameTextStyle: { color: muted, fontSize: fontPx(13) },
   };
 
   const name = `net-watch-${scheme}`;
   echarts.registerTheme(name, {
     color: [...CATEGORICAL[scheme]],
     backgroundColor: 'transparent',
-    textStyle: { fontFamily: 'inherit', color: text },
-    legend: { textStyle: { color: text }, inactiveColor: muted },
+    textStyle: { fontFamily: chartFontFamily(), fontSize: fontPx(13), color: text },
+    legend: { textStyle: { color: text, fontSize: fontPx(13) }, inactiveColor: muted },
     tooltip: {
       backgroundColor: surface,
       borderColor: v('--border'),
-      textStyle: { color: text },
+      textStyle: { color: text, fontSize: fontPx(13) },
       extraCssText: 'box-shadow: 0 4px 16px rgb(0 0 0 / 0.18); border-radius: 6px;',
     },
     categoryAxis: axisCommon,

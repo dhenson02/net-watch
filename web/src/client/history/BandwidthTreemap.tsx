@@ -25,6 +25,7 @@ import {
   type NodeInfo,
   type TreemapView,
 } from './treemapData.ts';
+import { fontPx } from '../charts/fonts.ts';
 
 const DIR_OPTIONS = [
   { value: 'total', label: 'total', title: 'Bytes sent + received' },
@@ -144,7 +145,7 @@ export function BandwidthTreemap({ range, filters }: Props) {
               itemStyle: { color: surface, borderColor: border, borderWidth: 1, textStyle: { color: text } },
               emphasis: { itemStyle: { color: border, textStyle: { color: text } } },
             },
-            label: { show: true, formatter: label, fontSize: 12, lineHeight: 15, overflow: 'truncate' },
+            label: { show: true, formatter: label, fontSize: fontPx(13), lineHeight: 15, overflow: 'truncate' },
             // The header strip of a node whose children are shown (a user, or a drilled-into process).
             upperLabel: {
               show: true,
@@ -174,12 +175,12 @@ export function BandwidthTreemap({ range, filters }: Props) {
             nodeClick: 'rootToNode',
             radius: ['0%', '95%'],
             itemStyle: { borderColor: surface, borderWidth: 1 },
-            label: { formatter: (p: NodeParams) => p.name ?? '', minAngle: 8, overflow: 'truncate', color: '#fff', fontSize: 11 },
+            label: { formatter: (p: NodeParams) => p.name ?? '', minAngle: 8, overflow: 'truncate', color: '#fff', fontSize: fontPx(12) },
             levels: [
               {},
-              { r0: '14%', r: '44%', itemStyle: { borderWidth: 2 }, label: { rotate: 'tangential', fontWeight: 600, fontSize: 12 } },
+              { r0: '14%', r: '44%', itemStyle: { borderWidth: 2 }, label: { rotate: 'tangential', fontWeight: 600, fontSize: fontPx(13) } },
               { r0: '44%', r: '74%', label: { rotate: 'radial', width: 80 } },
-              { r0: '74%', r: '95%', label: { rotate: 'radial', width: 50, fontSize: 10 } },
+              { r0: '74%', r: '95%', label: { rotate: 'radial', width: 50, fontSize: fontPx(12) } },
             ],
           };
     return {

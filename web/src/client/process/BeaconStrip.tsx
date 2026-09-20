@@ -32,6 +32,7 @@ import {
   rowLabels,
   scopeRange,
 } from './beaconStrip.ts';
+import { fontPx } from '../charts/fonts.ts';
 
 /** Rows shown before the strip scrolls (slider on the right). */
 const VISIBLE_ROWS = 30;
@@ -114,9 +115,9 @@ function StripChart({ d, range, focus }: { d: BeaconsResponse; range: TimeRange;
             width: GRID.left - 12,
             overflow: 'truncate',
             color: ink,
-            fontSize: 11,
+            fontSize: fontPx(12),
             formatter: (v: string) => (focusedLabels.has(v) ? `{focus|${v}}` : v),
-            rich: { focus: { color: accent, fontWeight: 700, fontSize: 11 } },
+            rich: { focus: { color: accent, fontWeight: 700, fontSize: fontPx(12) } },
           },
           splitLine: { show: true, lineStyle: { color: grid } },
         },
@@ -129,7 +130,7 @@ function StripChart({ d, range, focus }: { d: BeaconsResponse; range: TimeRange;
           axisLine: { show: false },
           axisLabel: {
             interval: 0,
-            fontSize: 11,
+            fontSize: fontPx(12),
             color: muted,
             formatter: (v: string) => {
               const dest = byLabel.get(v);
@@ -138,8 +139,8 @@ function StripChart({ d, range, focus }: { d: BeaconsResponse; range: TimeRange;
               return isPeriodic(dest) ? `{badge|periodic} ${text}` : text;
             },
             rich: {
-              txt: { color: muted, fontSize: 11 },
-              badge: { color: onAccent, backgroundColor: accent, borderRadius: 3, padding: [1, 4], fontSize: 10, fontWeight: 600 },
+              txt: { color: muted, fontSize: fontPx(12) },
+              badge: { color: onAccent, backgroundColor: accent, borderRadius: 3, padding: [1, 4], fontSize: fontPx(12), fontWeight: 600 },
             },
           },
         },

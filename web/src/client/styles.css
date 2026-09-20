@@ -318,6 +318,7 @@ a:hover {
   background: transparent;
   color: inherit;
   font: inherit;
+  font-family: var(--font-mono);
   cursor: pointer;
 }
 
@@ -437,6 +438,7 @@ a:hover {
   background: transparent;
   color: var(--muted);
   font: inherit;
+  font-family: var(--font-mono);
   font-size: var(--fs-sm);
   font-weight: 500;
   cursor: pointer;
@@ -492,6 +494,7 @@ input:focus-visible {
 .range-custom input,
 .range-custom button {
   font: inherit;
+  font-family: var(--font-mono);
   color: var(--text);
   background: var(--surface);
   border: 1px solid var(--border);
@@ -797,6 +800,7 @@ input:focus-visible {
   background: var(--surface);
   color: var(--muted);
   font: inherit;
+  font-family: var(--font-mono);
   font-size: var(--fs-sm);
   font-weight: 500;
   cursor: pointer;
@@ -982,7 +986,8 @@ input:focus-visible {
   background: var(--surface);
   color: var(--text);
   font: inherit;
-  font-size: 12px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
 }
 
 .table-scroll {
@@ -1034,6 +1039,7 @@ input:focus-visible {
   background: none;
   padding: 0;
   font: inherit;
+  font-family: var(--font-mono);
   color: inherit;
   text-decoration: underline;
   cursor: pointer;
@@ -1155,6 +1161,7 @@ input:focus-visible {
   background: none;
   color: inherit;
   font: inherit;
+  font-family: var(--font-mono);
   cursor: pointer;
 }
 
@@ -1279,6 +1286,7 @@ input:focus-visible {
   background: transparent;
   color: var(--muted);
   font: inherit;
+  font-family: var(--font-mono);
   font-size: 14px;
   line-height: 1;
   cursor: pointer;
@@ -1290,6 +1298,7 @@ input:focus-visible {
   background: transparent;
   color: var(--muted);
   font: inherit;
+  font-family: var(--font-mono);
   text-decoration: underline;
   cursor: pointer;
 }
@@ -1381,6 +1390,7 @@ input:focus-visible {
   background: none;
   color: var(--accent);
   font: inherit;
+  font-family: var(--font-mono);
   font-size: var(--fs-md);
   cursor: pointer;
 }
@@ -1596,6 +1606,7 @@ input:focus-visible {
   background: var(--bg);
   color: var(--text);
   font: inherit;
+  font-family: var(--font-mono);
 }
 
 .delete-error {
@@ -1619,4 +1630,18 @@ input:focus-visible {
   margin-top: 0;
   color: inherit;
   font-size: inherit;
+}
+
+/* Filter controls use the same monospace font as the charts and tables. */
+button,
+input,
+select,
+textarea,
+.chip,
+.ctl-label,
+.ctl-note,
+.range-label,
+.toggle,
+.tt-names label {
+  font-family: var(--font-mono);
 }
