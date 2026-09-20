@@ -871,3 +871,91 @@ export interface RdnsResponse {
   /** Addresses not looked up this time (over the per-request budget); ask again. */
   pending: string[];
 }
+
+/** One line of the Storage page: a partition (ClickHouse) or a day / fixed key group (Redis). */
+export interface StorageRow {
+  /** What a delete request names: the partition id, or a `YYYY-MM-DD` day. */
+  key: string;
+  label: string;
+  bytes: number;
+  /** ClickHouse rows, or Redis process instances. */
+  count: number;
+  /** ClickHouse: bytes before compression. */
+  rawBytes?: number;
+  deletable: boolean;
+  /** Finer rows (Redis hours of a day), already in the response. Not deletable on their own. */
+  children?: StorageRow[];
+  /** ClickHouse: finer rows load from `/api/storage/breakdown` (`table`, this `key`). */
+  expandable?: boolean;
+  /** The size is the parent's bytes shared out by row count, not measured. */
+  estimated?: boolean;
+}
+
+export interface StorageTable {
+  table: string;
+  bytes: number;
+  count: number;
+  /** How the table is partitioned, in words. */
+  by: string;
+  /** Whether its partitions can be dropped here. */
+  deletable: boolean;
+  /** Newest first. */
+  rows: StorageRow[];
+}
+
+export interface ClickHouseStorage {
+  bytes: number;
+  tables: StorageTable[];
+}
+
+export interface RedisStorage {
+  /** `used_memory`: what the dataset holds in RAM. */
+  usedMemory: number;
+  maxMemory: number;
+  /** Size of the append-only file on disk; null when AOF is off. */
+  aofBytes: number | null;
+  keys: number;
+  /** Keys that are not per-day: the snapshot, the stream, live processes, and the remainder (overhead). */
+  fixed: StorageRow[];
+  /** Ended processes grouped by the day they ended, newest first. Sizes are MEMORY USAGE estimates. */
+  days: StorageRow[];
+  /** ms; the scan is cached for a short while. */
+  scannedAt: number;
+}
+
+/** `/api/storage`: each store fails on its own, so one being down still shows the other. */
+export interface StorageResponse {
+  /** Deleting needs STORAGE_ADMIN_PASSWORD on the server. */
+  deleteEnabled: boolean;
+  /** The browser's timezone (`tz`): Redis days and every hour row use it. */
+  timezone: string;
+  /** ClickHouse's own: its partitions are days in this zone, whatever the browser's. */
+  clickhouseTimezone: string;
+  clickhouse: ClickHouseStorage | null;
+  clickhouseError: string | null;
+  redis: RedisStorage | null;
+  redisError: string | null;
+}
+
+/** POST `/api/storage/delete`. */
+export interface StorageDeleteRequest {
+  store: 'clickhouse' | 'redis';
+  /** ClickHouse only: `flows` or `flows_1m`. */
+  table?: string;
+  /** Partition ids (ClickHouse) or `YYYY-MM-DD` days (Redis). */
+  keys: string[];
+  password: string;
+  /** Redis: the timezone the `YYYY-MM-DD` days are in (the browser's). */
+  tz?: string;
+}
+
+export interface StorageDeleteResponse {
+  deleted: number;
+  /** Redis: an AOF rewrite was started so the file shrinks. */
+  aofRewrite: boolean;
+}
+
+/** `/api/storage/breakdown`: a ClickHouse day split by hour, or a `flows_1m` month split by day (each expandable to hours). */
+export interface StorageBreakdownResponse {
+  rows: StorageRow[];
+}

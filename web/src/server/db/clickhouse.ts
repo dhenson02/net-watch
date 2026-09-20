@@ -4,7 +4,11 @@ import { config, displayTarget } from '../config.ts';
 
 export type { ClickHouseClient };
 
-export function createClickHouse(cfg: typeof config.clickhouse): ClickHouseClient {
+/**
+ * The dashboard reads with `readonly=2`. `writable` gives the one client the
+ * Storage page uses to drop partitions; nothing else may use it.
+ */
+export function createClickHouse(cfg: typeof config.clickhouse, opts: { writable?: boolean } = {}): ClickHouseClient {
   return createClient({
     url: cfg.url,
     username: cfg.username,
@@ -16,8 +20,8 @@ export function createClickHouse(cfg: typeof config.clickhouse): ClickHouseClien
     log: { level: ClickHouseLogLevel.OFF },
     compression: { response: true },
     clickhouse_settings: {
-      // The dashboard only reads. readonly=2 still allows per-query settings.
-      readonly: '2',
+      // readonly=2 still allows per-query settings.
+      readonly: opts.writable ? '0' : '2',
     },
   });
 }

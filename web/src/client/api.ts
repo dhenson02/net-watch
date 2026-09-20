@@ -101,6 +101,9 @@ export const urls = {
       limit: p.limit,
       ...p.filters,
     })}`,
+  storage: (tz: string) => `/api/storage?${qs({ tz })}`,
+  // Hours of a ClickHouse day (or days of a flows_1m month); sizes are estimates.
+  storageBreakdown: (table: string, key: string, tz: string) => `/api/storage/breakdown?${qs({ table, key, tz })}`,
   // 18: reverse DNS on demand (only with RDNS=1 on the server).
   rdns: (ips: readonly string[]) => `/api/rdns?${qs({ ips: ips.join(',') })}`,
   historyScatter: (r: TimeRange, p: { group: string; basis: string; filters: UrlFilters }) =>
@@ -108,3 +111,16 @@ export const urls = {
 };
 
 export type { HistorySummary, ProcessInfo };
+
+export async function postJson<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(path, {
+    method: 'POST',
+    headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const err = (await res.json().catch(() => null)) as ApiError | null;
+    throw new Error(err?.error ?? `${res.status} ${res.statusText}`);
+  }
+  return (await res.json()) as T;
+}

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 net-watch is a per-process network accounting daemon for Linux. It uses eBPF (Aya) and publishes to Redis (realtime) and ClickHouse (history). README.md documents the Redis key layout, the ClickHouse tables, the CLI flags and the measurement limits.
 
-`web/` is a separate Node/React dashboard that only reads the databases. It has its own `CLAUDE.md` and shares no files with the Rust crates.
+`web/` is a separate Node/React dashboard that reads the databases (its Storage page can also delete old data, behind a password). It has its own `CLAUDE.md` and shares no files with the Rust crates.
 
 ## Commands
 

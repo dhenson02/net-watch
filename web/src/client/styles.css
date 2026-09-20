@@ -15,9 +15,32 @@
 
   --radius: 8px;
   --gutter: 16px;
+
+  /* Font scaling: adjust --font-scale to resize all text and spacing proportionally.
+     Also update --base-line-height to match. Common multipliers: 1 (14px), 1.07 (15px), 1.14 (16px). */
+  --font-scale: 1.07;
+  --base-size: 14px;
+  --base-line-height: 1.5;
+
+  /* Common font sizes (scale with --font-scale). */
+  --fs-xs: calc(11px * var(--font-scale));
+  --fs-sm: calc(12px * var(--font-scale));
+  --fs-base: calc(14px * var(--font-scale));
+  --fs-md: calc(15px * var(--font-scale));
+  --fs-lg: calc(16px * var(--font-scale));
+  --fs-xl: calc(20px * var(--font-scale));
+  --fs-2xl: calc(22px * var(--font-scale));
+
+  /* Common spacing scales based on font size. */
+  --space-xs: calc(4px * var(--font-scale));
+  --space-sm: calc(8px * var(--font-scale));
+  --space-md: calc(12px * var(--font-scale));
+  --space-lg: calc(16px * var(--font-scale));
+  --space-xl: calc(20px * var(--font-scale));
+
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  font-size: 14px;
-  line-height: 1.45;
+  font-size: calc(var(--base-size) * var(--font-scale));
+  line-height: var(--base-line-height);
   color: var(--text);
   background: var(--bg);
   -webkit-font-smoothing: antialiased;
@@ -76,7 +99,7 @@ body {
   align-items: center;
   gap: 8px;
   font-weight: 600;
-  font-size: 15px;
+  font-size: var(--fs-md);
   letter-spacing: -0.01em;
 }
 
@@ -94,10 +117,10 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 3px 10px;
+  padding: var(--space-xs) var(--space-sm);
   border: 1px solid var(--border);
   border-radius: 999px;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   white-space: nowrap;
 }
 
@@ -130,12 +153,12 @@ body {
   width: 100%;
   max-width: 1600px;
   margin: 0 auto;
-  padding: 20px var(--gutter) 32px;
+  padding: var(--space-xl) var(--gutter) calc(var(--space-xl) * 1.6);
 }
 
 h1 {
-  margin: 0 0 16px;
-  font-size: 20px;
+  margin: 0 0 var(--space-lg);
+  font-size: var(--fs-xl);
   font-weight: 600;
   letter-spacing: -0.01em;
 }
@@ -259,8 +282,8 @@ a:hover {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
-  padding: 12px 16px 0;
+  gap: var(--space-md);
+  padding: var(--space-md) var(--space-lg) 0;
 }
 
 .panel-title {
@@ -268,7 +291,7 @@ a:hover {
   align-items: center;
   gap: 6px;
   margin: 0;
-  font-size: 14px;
+  font-size: var(--fs-base);
   font-weight: 600;
 }
 
@@ -337,14 +360,14 @@ a:hover {
 
 .panel-body {
   flex: 1;
-  padding: 12px 16px;
+  padding: var(--space-md) var(--space-lg);
   min-width: 0;
 }
 
 .panel-foot {
-  padding: 0 16px 10px;
+  padding: 0 var(--space-lg) var(--space-sm);
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--fs-xs);
 }
 
 .panel-state {
@@ -1417,4 +1440,162 @@ input:focus-visible {
 .dest-org {
   margin-left: 6px;
   font-size: 12px;
+}
+
+/* Storage page */
+
+.storage-panels {
+  margin-top: 8px;
+}
+
+.storage-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 180px), 1fr));
+  gap: var(--gutter);
+  margin-bottom: 16px;
+}
+
+.storage-section {
+  margin-top: 16px;
+}
+
+.storage-section h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.storage-section-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.storage-check {
+  width: 28px;
+}
+
+.storage-bar-cell {
+  width: 30%;
+  min-width: 80px;
+}
+
+.storage-bar {
+  display: block;
+  height: 8px;
+  min-width: 1px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+.storage-del {
+  margin-top: 0;
+  color: var(--down);
+  font-size: 12px;
+}
+
+.storage-done {
+  margin: 8px 0;
+  padding: 8px 12px;
+  border: 1px solid var(--ok);
+  border-radius: var(--radius);
+  background: var(--surface);
+  font-size: 13px;
+}
+
+.btn-danger-outline {
+  color: var(--down);
+  border-color: var(--down);
+}
+
+.btn-danger-outline:hover {
+  color: var(--down);
+}
+
+.btn-danger {
+  color: #fff;
+  border-color: var(--down);
+  background: var(--down);
+}
+
+.btn-danger:hover {
+  color: #fff;
+}
+
+.delete-dialog {
+  width: min(480px, calc(100vw - 32px));
+  padding: 20px;
+  border: 2px solid var(--down);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.delete-dialog::backdrop {
+  background: rgb(0 0 0 / 55%);
+}
+
+.delete-title {
+  margin: 0 0 8px;
+  color: var(--down);
+  font-size: 16px;
+}
+
+.delete-body p {
+  margin: 0 0 6px;
+}
+
+.delete-list {
+  margin: 0 0 8px;
+  padding-left: 20px;
+  font-size: 13px;
+}
+
+.delete-warn {
+  margin: 8px 0;
+  font-weight: 600;
+}
+
+.delete-field {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+
+.delete-field input {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+
+.delete-error {
+  margin: 0 0 8px;
+  color: var(--down);
+  font-size: 13px;
+}
+
+.delete-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.storage-child td {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.storage-expand {
+  margin-top: 0;
+  color: inherit;
+  font-size: inherit;
 }

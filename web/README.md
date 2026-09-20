@@ -52,6 +52,7 @@ Environment variables, or `web/.env` (real environment variables win):
 | `CLICKHOUSE_DATABASE` | `netwatch` |
 | `LOG_LEVEL` | `info` |
 | `LIVE_BACKFILL` | `900`: ticks (1 s each) the live hub loads at startup and keeps in memory. The stream holds up to 3600; loading all of them is slower to parse. |
+| `STORAGE_ADMIN_PASSWORD` | (empty) password the Storage page asks for before deleting; empty disables deleting |
 | `GEOIP_FILE` | `data/ip2asn-combined.tsv.gz` (relative to `web/`): the iptoasn.com IP → ASN table for the Destinations page, plain or gzipped. Missing is fine: everything works without ASN/country |
 | `RDNS` | `0`; `1` enables reverse DNS on demand in the destination table (each lookup is a DNS query from this host) |
 
@@ -79,6 +80,8 @@ the background, and `/api/health` reports the state of each backend.
 
 | route | |
 |---|---|
+| `GET /api/storage` | the Storage page (`StorageResponse`): ClickHouse on-disk bytes per table and partition (day for `flows`, month for `flows_1m`) from `system.parts`; Redis memory, AOF size, and ended processes by the day they ended (`MEMORY USAGE`, scan cached 30 s). Each store reports its own error. Day boundaries use ClickHouse's timezone |
+| `POST /api/storage/delete` | `{store: 'clickhouse'\|'redis', table?, keys[], password}`: drops ClickHouse partitions, or deletes the ended Redis processes of the given days (then starts `BGREWRITEAOF`). Needs `STORAGE_ADMIN_PASSWORD`: 403 when unset or wrong, 429 after 5 wrong passwords in a minute. Live processes and `processes` are never deletable |
 | `GET /api/health` | status, latency and version of Redis and ClickHouse (always 200 while the API is up), the IP → ASN table's state (`geo`: loaded, ranges, file date, error) and whether reverse DNS is on (`rdns`) |
 | `GET /api/live/series?seconds=900` | `CompactTick[]` from the hub's ring buffer, oldest first (`seconds` 1..86400) |
 | `GET /api/live/events` | SSE: `hello` `{latestTs}` on connect, then one `tick` (a `CompactTick`) per collector tick, `:keepalive` every 15 s |
@@ -133,6 +136,10 @@ latest full snapshot, and fans ticks out to browsers over SSE. Browsers never
 read the stream themselves. After an outage it resumes from the last id it
 read; ticks lost meanwhile (stream trimmed, collector stopped) are flagged with
 `gap: true` on the next tick so charts draw a break.
+
+## Known issues
+
+- **Storage page: rows by date still show in UTC.** The ClickHouse day and month rows are partitions, cut in ClickHouse's timezone (UTC), and are labelled that way instead of in the browser's timezone. Their hour rows and the Redis rows do follow the browser's timezone, so a UTC day's hours can carry a different local date. To be fixed later.
 
 ## Layout
 
@@ -200,7 +207,7 @@ Conventions:
   properties) because Node strips types rather than compiling them.
   `tsconfig.server.json` enforces this with `erasableSyntaxOnly`. Relative
   imports keep their `.ts` extension.
-- ClickHouse queries run with `readonly=2`, so the dashboard cannot write.
+- ClickHouse queries run with `readonly=2`, so they cannot write. The one exception is the Storage page's delete, which uses a separate writable client (`createClickHouse(…, { writable: true })`) and only runs `ALTER TABLE … DROP PARTITION` on `flows` / `flows_1m` partitions that exist.
   Pass user input as query parameters (`{name:Type}` + `query_params`), never
   by string concatenation.
 - Charts use Apache ECharts through `<EChart>` (`src/client/charts/`). Import

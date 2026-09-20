@@ -13,12 +13,15 @@ import { historyRoutes } from './routes/history.ts';
 import { liveRoutes } from './routes/live.ts';
 import { processRoutes } from './routes/process.ts';
 import { rdnsRoutes } from './routes/rdns.ts';
+import { storageRoutes } from './routes/storage.ts';
 import { Users } from './users.ts';
 
 const app = Fastify({ logger: { level: config.logLevel } });
 
 const redis = createRedis(config.redisUrl, app.log);
 const clickhouse = createClickHouse(config.clickhouse);
+// Only the Storage page's delete endpoint uses this one.
+const clickhouseAdmin = createClickHouse(config.clickhouse, { writable: true });
 const hub = new LiveHub(redis, app.log, config.liveBackfill);
 hub.start();
 const users = new Users(app.log);
@@ -33,6 +36,7 @@ app.addHook('onClose', async () => {
   geo.stop();
   redis.destroy();
   await clickhouse.close();
+  await clickhouseAdmin.close();
 });
 
 // Every error response is `{ error }`. Messages of unexpected (non-HttpError)
@@ -50,6 +54,7 @@ liveRoutes(app, deps);
 historyRoutes(app, deps);
 processRoutes(app, deps);
 rdnsRoutes(app, deps);
+storageRoutes(app, { redis, clickhouse, clickhouseAdmin });
 
 const serveClient = existsSync(`${config.clientDir}/index.html`);
 if (serveClient) {

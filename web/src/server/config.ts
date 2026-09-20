@@ -47,6 +47,11 @@ export const config = {
   geoipFile: resolve(appRoot, env('GEOIP_FILE', 'data/ip2asn-combined.tsv.gz')),
   /** Reverse DNS on demand for the destination table (sends queries from this host). */
   rdns: env('RDNS', '0') === '1',
+  /**
+   * Password for deleting stored data on the Storage page. Empty disables
+   * deleting (the page is still readable).
+   */
+  storageAdminPassword: process.env.STORAGE_ADMIN_PASSWORD ?? '',
   /** Built SPA; served only if it exists (in dev, Vite serves the client). */
   clientDir: `${appRoot}dist/client`,
 } as const;

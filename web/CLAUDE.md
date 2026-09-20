@@ -25,3 +25,4 @@ connects them. See README.md here for running, config, layout and conventions.
   `GROUP BY` (SummingMergeTree); `processes` needs `FINAL` or `argMax`.
 - Disconnects are detected on the response (`reply.raw` 'close'), not the
   request: a GET request's 'close' fires as soon as its empty body is read.
+- The dashboard reads with `readonly=2`. Only `routes/storage.ts` writes (Storage page: drop ClickHouse partitions, delete ended Redis processes), behind `STORAGE_ADMIN_PASSWORD` and through the separate `clickhouseAdmin` client. Never delete live-process keys from Redis: the collector owns them.
