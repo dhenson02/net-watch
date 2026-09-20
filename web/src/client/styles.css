@@ -48,6 +48,9 @@
   --space-lg: calc(16px * var(--font-scale));
   --space-xl: calc(20px * var(--font-scale));
 
+  /* Monospace font for data/graphs/tables (preferred in order) */
+  --font-mono: 'JetBrains Mono', 'Operator Mono Book', 'Ubuntu Mono', 'Roboto Mono', monospace;
+
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   font-size: calc(var(--base-size) * var(--font-scale));
   line-height: var(--base-line-height);
@@ -154,6 +157,7 @@ body {
 }
 
 .pill-detail {
+  font-family: var(--font-mono);
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
@@ -215,6 +219,7 @@ a:hover {
 }
 
 .num {
+  font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
 }
 
@@ -269,6 +274,7 @@ a:hover {
 
 .range-label {
   margin: 0 0 16px;
+  font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
 }
 
@@ -576,6 +582,7 @@ input:focus-visible {
 .facts dd {
   margin: 0;
   min-width: 0;
+  font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
 }
 
@@ -626,6 +633,7 @@ input:focus-visible {
 
 .plain-list .num {
   margin-left: auto;
+  font-family: var(--font-mono);
   color: var(--muted);
   font-size: var(--fs-sm);
   white-space: nowrap;
@@ -643,6 +651,7 @@ input:focus-visible {
 }
 
 .stat-value {
+  font-family: var(--font-mono);
   font-size: var(--fs-2xl);
   font-weight: 600;
   letter-spacing: -0.01em;
@@ -747,12 +756,14 @@ input:focus-visible {
 }
 
 .stat-tile .stat-value {
+  font-family: var(--font-mono);
   font-size: var(--fs-xl);
   line-height: 1.25;
   overflow-wrap: anywhere;
 }
 
 .stat-unit {
+  font-family: var(--font-mono);
   color: var(--muted);
   font-size: var(--fs-sm);
   font-weight: 400;
@@ -762,6 +773,7 @@ input:focus-visible {
   display: inline-flex;
   flex-wrap: wrap;
   column-gap: var(--space-sm);
+  font-family: var(--font-mono);
   font-size: var(--fs-lg);
 }
 
@@ -836,12 +848,14 @@ input:focus-visible {
 /* ECharts axis tooltip for stacked charts */
 .tip {
   min-width: 180px;
+  font-family: var(--font-mono);
   font-size: var(--fs-sm);
   line-height: 1.5;
 }
 
 .tip-time {
   margin-bottom: var(--space-xs);
+  font-family: var(--font-mono);
   color: var(--muted);
 }
 
@@ -875,6 +889,7 @@ input:focus-visible {
 
 .tip-num {
   margin-left: auto;
+  font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -943,6 +958,7 @@ input:focus-visible {
   max-width: 320px;
   padding-left: 14px;
   overflow: hidden;
+  font-family: var(--font-mono);
   font-size: var(--fs-xs);
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1103,6 +1119,7 @@ input:focus-visible {
 .tt {
   width: 100%;
   border-collapse: collapse;
+  font-family: var(--font-mono);
   font-size: var(--fs-md);
 }
 
@@ -1110,6 +1127,7 @@ input:focus-visible {
   padding: var(--space-xs) var(--space-sm) calc(var(--space-xs) * 1.5);
   border-bottom: 1px solid var(--border);
   color: var(--muted);
+  font-family: var(--font-mono);
   font-size: var(--fs-sm);
   font-weight: 500;
   text-align: left;
@@ -1119,6 +1137,7 @@ input:focus-visible {
 .tt td {
   padding: var(--space-sm) var(--space-xs);
   border-bottom: 1px solid var(--border);
+  font-family: var(--font-mono);
   vertical-align: middle;
 }
 
@@ -1135,6 +1154,7 @@ input:focus-visible {
 }
 
 .tt .tt-num {
+  font-family: var(--font-mono);
   text-align: right;
   white-space: nowrap;
 }
@@ -1186,7 +1206,7 @@ input:focus-visible {
 .tt-cmd {
   overflow: hidden;
   color: var(--muted);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: var(--fs-xs);
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1195,12 +1215,14 @@ input:focus-visible {
 .tt-pid,
 .tt-age,
 .tt-totals {
+  font-family: var(--font-mono);
   font-size: var(--fs-sm);
   white-space: nowrap;
 }
 
 .tt-rate {
   min-width: 96px;
+  font-family: var(--font-mono);
   text-align: right;
   white-space: nowrap;
 }
@@ -1255,6 +1277,7 @@ input:focus-visible {
 }
 
 .chip code {
+  font-family: var(--font-mono);
   font-size: var(--fs-sm);
 }
 
@@ -1332,6 +1355,7 @@ input:focus-visible {
 
 .heatmap-multiple figcaption {
   margin-bottom: var(--space-xs);
+  font-family: var(--font-mono);
   font-size: var(--fs-md);
 }
 
@@ -1600,6 +1624,7 @@ input:focus-visible {
 }
 
 .storage-child td {
+  font-family: var(--font-mono);
   color: var(--muted);
   font-size: 12px;
 }
