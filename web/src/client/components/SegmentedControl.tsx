@@ -14,7 +14,7 @@ export function SegmentedControl<T extends string>({ label, options, value, onCh
       <span className="seg-caption" aria-hidden="true">
         {label}
       </span>
-      <div className="segmented" role="radiogroup" aria-label={label}>
+      <div className="segmented" role="radiogroup" aria-label={label} data-count={options.length}>
         {options.map((o) => (
           <button
             key={o.value}

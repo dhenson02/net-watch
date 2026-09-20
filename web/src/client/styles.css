@@ -1619,8 +1619,23 @@ textarea,
   max-width: 100%;
 }
 
+/* In the side panel a group is a grid of equal cells: one per line, or two
+   per line when it has exactly two or four options. */
+.chart-side .seg-group,
 .chart-side .segmented {
-  flex-wrap: wrap;
+  display: grid;
+  width: 100%;
+  grid-template-columns: 1fr;
+}
+
+.chart-side .segmented[data-count='2'],
+.chart-side .segmented[data-count='4'] {
+  grid-template-columns: 1fr 1fr;
+}
+
+.chart-side .segmented button {
+  min-width: 0;
+  text-align: center;
 }
 
 .chart-side .ctl-group {
